@@ -35,8 +35,10 @@ COLOUR = {
     "absent": "#E9E9EB",
     "absent_text": "#9A9FA8",
     "danger": "#C85858",
-    "male": "#6E91D4",
-    "female": "#D980A2",
+    "male": "#BFD5F7",
+    "male_line": "#88A9DD",
+    "female": "#F3C4D7",
+    "female_line": "#D991AE",
     "shadow": "#D9D5CC",
 }
 
@@ -503,9 +505,16 @@ class PartySeatPlanner(tk.Tk):
         guest = self.plan.guest_for_seat(seat_id)
         half = size / 2
         tag = f"seat:{seat_id}"
-        outline = COLOUR["orange"] if seat.locked else COLOUR["line"]
+        if guest:
+            fill = COLOUR["female"] if guest.gender == "F" else COLOUR["male"]
+            gender_outline = (
+                COLOUR["female_line"] if guest.gender == "F" else COLOUR["male_line"]
+            )
+        else:
+            fill = COLOUR["orange_soft"] if seat.locked else COLOUR["paper"]
+            gender_outline = COLOUR["line"]
+        outline = COLOUR["orange"] if seat.locked else gender_outline
         width = 3 if seat.locked else 1
-        fill = COLOUR["orange_soft"] if seat.locked else COLOUR["paper"]
 
         self.canvas.create_oval(
             x - half + 2,
@@ -527,20 +536,11 @@ class PartySeatPlanner(tk.Tk):
             tags=("scene", tag, "seat"),
         )
         if guest:
-            self.canvas.create_oval(
-                x - 3,
-                y - half + 5,
-                x + 3,
-                y - half + 11,
-                fill=COLOUR["female"] if guest.gender == "F" else COLOUR["male"],
-                outline="",
-                tags=("scene", tag, "seat"),
-            )
             parts = guest.name.split(maxsplit=1)
             label = parts[0] if len(parts) == 1 else f"{parts[0]}\n{parts[1]}"
             self.canvas.create_text(
                 x,
-                y + 3,
+                y,
                 text=label,
                 width=max(40, size - 7),
                 justify="center",
