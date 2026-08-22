@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A polished, dependency-free visual party seating planner."""
+"""A polished visual party seating planner."""
 
 from __future__ import annotations
 
@@ -11,7 +11,12 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog
 
 from macos_pinch import attach_pinch
-from seat_planner_model import SaveManager, SeatingPlan, read_guest_names
+from seat_planner_model import (
+    SaveManager,
+    SeatingPlan,
+    gender_database_available,
+    read_guest_names,
+)
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -183,7 +188,10 @@ class PartySeatPlanner(tk.Tk):
         status_frame = tk.Frame(self.sidebar, bg="#111C2F", height=72)
         status_frame.pack(fill="x", side="bottom")
         status_frame.pack_propagate(False)
-        self.status_var = tk.StringVar(value="Drag names between seats. Right-click to lock.")
+        initial_status = "Drag names between seats. Right-click to lock."
+        if not gender_database_available():
+            initial_status = "Install requirements.txt for broad name recognition."
+        self.status_var = tk.StringVar(value=initial_status)
         tk.Label(
             status_frame,
             textvariable=self.status_var,
@@ -1074,25 +1082,30 @@ class PartySeatPlanner(tk.Tk):
     def open_guest_editor(self) -> None:
         editor = tk.Toplevel(self)
         editor.title("Edit guests")
-        editor.geometry("570x680")
-        editor.minsize(470, 520)
+        editor.geometry("640x680")
+        editor.minsize(520, 520)
         editor.transient(self)
         editor.grab_set()
         editor.configure(bg=COLOUR["paper"])
 
         tk.Label(
             editor,
-            text="Guest attendance",
+            text="Guests",
             bg=COLOUR["paper"],
             fg=COLOUR["ink"],
             font=("Avenir Next", 22, "bold"),
         ).pack(anchor="w", padx=26, pady=(22, 2))
         tk.Label(
             editor,
-            text="Untick anyone who is not coming. Their seat will be cleared.",
+            text=(
+                "Untick anyone who is not coming. Choose M or F if a name was "
+                "inferred incorrectly."
+            ),
             bg=COLOUR["paper"],
             fg=COLOUR["muted"],
             font=("Avenir Next", 10),
+            justify="left",
+            wraplength=570,
         ).pack(anchor="w", padx=27, pady=(0, 14))
 
         list_shell = tk.Frame(editor, bg="#F3F4F6", highlightbackground=COLOUR["line"], highlightthickness=1)
@@ -1107,24 +1120,41 @@ class PartySeatPlanner(tk.Tk):
         inner.bind("<Configure>", lambda _e: guest_canvas.configure(scrollregion=guest_canvas.bbox("all")))
         guest_canvas.bind("<Configure>", lambda e: guest_canvas.itemconfigure(window, width=e.width))
 
-        variables: dict[str, tk.BooleanVar] = {}
-        rows: dict[str, tk.Checkbutton] = {}
+        attendance_variables: dict[str, tk.BooleanVar] = {}
+        gender_variables: dict[str, tk.StringVar] = {}
+        rows: dict[str, tk.Frame] = {}
+        checks: dict[str, tk.Checkbutton] = {}
+        gender_buttons: dict[str, tuple[tk.Radiobutton, tk.Radiobutton]] = {}
 
         def restyle(guest_id: str) -> None:
-            active = variables[guest_id].get()
-            rows[guest_id].configure(
-                fg=COLOUR["ink"] if active else COLOUR["absent_text"],
-                bg="#F3F4F6" if active else "#E4E5E8",
-                selectcolor="#F3F4F6" if active else "#E4E5E8",
+            active = attendance_variables[guest_id].get()
+            background = "#F3F4F6" if active else "#E4E5E8"
+            foreground = COLOUR["ink"] if active else COLOUR["absent_text"]
+            rows[guest_id].configure(bg=background)
+            checks[guest_id].configure(
+                fg=foreground,
+                bg=background,
+                activebackground=background,
+                selectcolor=background,
             )
+            for button in gender_buttons[guest_id]:
+                button.configure(
+                    fg=foreground,
+                    bg=background,
+                    activebackground=background,
+                )
 
         for guest in sorted(self.plan.guests.values(), key=lambda item: (item.name.lower(), item.id)):
-            variable = tk.BooleanVar(value=guest.attending)
-            variables[guest.id] = variable
-            row = tk.Checkbutton(
-                inner,
+            attendance = tk.BooleanVar(value=guest.attending)
+            gender = tk.StringVar(value=guest.gender)
+            attendance_variables[guest.id] = attendance
+            gender_variables[guest.id] = gender
+            row = tk.Frame(inner, bg="#F3F4F6")
+            row.pack(fill="x", padx=5, pady=1)
+            check = tk.Checkbutton(
+                row,
                 text=guest.name,
-                variable=variable,
+                variable=attendance,
                 command=lambda guest_id=guest.id: restyle(guest_id),
                 anchor="w",
                 bg="#F3F4F6",
@@ -1137,24 +1167,75 @@ class PartySeatPlanner(tk.Tk):
                 pady=6,
                 bd=0,
             )
-            row.pack(fill="x", padx=5, pady=1)
+            check.pack(side="left", fill="x", expand=True)
+            female = tk.Radiobutton(
+                row,
+                text="F",
+                variable=gender,
+                value="F",
+                bg="#F3F4F6",
+                fg=COLOUR["ink"],
+                activebackground="#F3F4F6",
+                selectcolor=COLOUR["female"],
+                font=("Avenir Next", 10, "bold"),
+                bd=0,
+                padx=8,
+            )
+            male = tk.Radiobutton(
+                row,
+                text="M",
+                variable=gender,
+                value="M",
+                bg="#F3F4F6",
+                fg=COLOUR["ink"],
+                activebackground="#F3F4F6",
+                selectcolor=COLOUR["male"],
+                font=("Avenir Next", 10, "bold"),
+                bd=0,
+                padx=8,
+            )
+            female.pack(side="right", padx=(0, 8))
+            male.pack(side="right")
             rows[guest.id] = row
+            checks[guest.id] = check
+            gender_buttons[guest.id] = (male, female)
             restyle(guest.id)
 
         footer = tk.Frame(editor, bg=COLOUR["paper"])
         footer.pack(fill="x", padx=26, pady=18)
 
         def apply_changes() -> None:
-            changed = 0
-            for guest_id, variable in variables.items():
+            attendance_changes = 0
+            gender_changes = 0
+            for guest_id, variable in attendance_variables.items():
                 if self.plan.guests[guest_id].attending != variable.get():
                     self.plan.set_attending(guest_id, variable.get())
-                    changed += 1
+                    attendance_changes += 1
+                selected_gender = gender_variables[guest_id].get()
+                if self.plan.guests[guest_id].gender != selected_gender:
+                    self.plan.set_gender(guest_id, selected_gender)
+                    gender_changes += 1
             editor.destroy()
             self.bench_page = self.absent_page = 0
             self.draw_scene()
             self._flash_canvas(COLOUR["blue"])
-            self.set_status(f"Guest list updated — {changed} change{'s' if changed != 1 else ''}.")
+            total = attendance_changes + gender_changes
+            if total:
+                parts = []
+                if attendance_changes:
+                    parts.append(
+                        f"{attendance_changes} attendance "
+                        f"change{'s' if attendance_changes != 1 else ''}"
+                    )
+                if gender_changes:
+                    parts.append(
+                        f"{gender_changes} gender change{'s' if gender_changes != 1 else ''}"
+                    )
+                self.set_status(
+                    f"Guest list updated — {' and '.join(parts)}."
+                )
+            else:
+                self.set_status("Guest list unchanged.")
 
         cancel = tk.Label(
             footer,

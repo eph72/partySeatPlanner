@@ -13,7 +13,13 @@ import math
 from pathlib import Path
 import random
 import re
+import unicodedata
 from typing import Iterable, Literal
+
+try:
+    import gender_guesser.detector as gender_detector
+except ImportError:  # Keep the app usable until requirements.txt is installed.
+    gender_detector = None
 
 
 TABLE_COUNT = 4
@@ -21,9 +27,15 @@ SEATS_PER_TABLE = 24
 Gender = Literal["M", "F"]
 
 
-# A broad, intentionally conservative list.  Unknown first names use a small
-# spelling heuristic, so a gendered randomisation still works with ordinary UK
-# party lists without adding a third-party package.
+_GENDER_DETECTOR = (
+    gender_detector.Detector(case_sensitive=False) if gender_detector is not None else None
+)
+_TITLE_WORDS = {
+    "dr", "father", "fr", "hon", "miss", "mr", "mrs", "ms", "prof", "rev", "sir",
+}
+
+
+# Common-name fallbacks used when the broader optional database cannot decide.
 FEMALE_FIRST_NAMES = {
     "abigail", "alice", "alicia", "amanda", "amelia", "amy", "anna", "anne",
     "beth", "bethany", "beverley", "brooke", "caitlin", "caroline", "charlotte",
@@ -60,14 +72,49 @@ MALE_FIRST_NAMES = {
 }
 
 
+def _first_name(name: str) -> str:
+    """Return a cleaned given name, ignoring an optional title."""
+
+    words = name.strip().split()
+    while len(words) > 1 and re.sub(r"[^a-z]", "", words[0].lower()) in _TITLE_WORDS:
+        words.pop(0)
+    return words[0].strip(".,;:()[]{}") if words else ""
+
+
+def _ascii_name(name: str) -> str:
+    return "".join(
+        character
+        for character in unicodedata.normalize("NFKD", name)
+        if not unicodedata.combining(character)
+    )
+
+
+def gender_database_available() -> bool:
+    """Whether the broad offline first-name database is installed."""
+
+    return _GENDER_DETECTOR is not None
+
+
 def infer_gender(name: str) -> Gender:
     """Infer M/F from a conventional first name.
 
-    The requested input has no gender column.  Exact matches are preferred; the
-    fallback is deterministic so re-opening a plan never changes its result.
+    The offline name database is tried with UK weighting and then globally.
+    Exact built-in matches and a deterministic spelling rule remain as a
+    fallback, so the app still opens before its optional dependency is installed.
     """
 
-    first = re.sub(r"[^a-z]", "", name.strip().split()[0].lower()) if name.strip() else ""
+    given_name = _first_name(name)
+    if _GENDER_DETECTOR and given_name:
+        candidates = (given_name, _ascii_name(given_name))
+        for candidate in dict.fromkeys(candidates):
+            for country in ("great_britain", None):
+                result = _GENDER_DETECTOR.get_gender(candidate, country)
+                if result in ("female", "mostly_female"):
+                    return "F"
+                if result in ("male", "mostly_male"):
+                    return "M"
+
+    first = re.sub(r"[^a-z]", "", _ascii_name(given_name).lower())
     if first in FEMALE_FIRST_NAMES:
         return "F"
     if first in MALE_FIRST_NAMES:
@@ -75,6 +122,24 @@ def infer_gender(name: str) -> Gender:
     if first.endswith(("a", "ia", "ie", "elle", "ette", "lyn", "een", "ine", "y")):
         return "F"
     return "M"
+
+
+def parse_guest_entry(entry: str) -> tuple[str, Gender | None]:
+    """Parse ``Full Name`` or ``Full Name | M/F`` from a guest-list line."""
+
+    match = re.fullmatch(r"\s*(.*?)\s*\|\s*([mMfF])\s*", entry)
+    if match:
+        name = " ".join(match.group(1).split())
+        if not name:
+            raise ValueError("A guest gender override must include a name before | M or | F.")
+        gender: Gender = "M" if match.group(2).upper() == "M" else "F"
+        return name, gender
+    if "|" in entry:
+        raise ValueError(f"Invalid guest entry {entry!r}; use 'Full Name | M' or 'Full Name | F'.")
+    name = " ".join(entry.strip().split())
+    if not name:
+        raise ValueError("Guest names cannot be blank.")
+    return name, None
 
 
 def read_guest_names(path: Path) -> list[str]:
@@ -129,10 +194,16 @@ class SeatingPlan:
         seats_per_table: int = SEATS_PER_TABLE,
         table_count: int | None = TABLE_COUNT,
     ) -> "SeatingPlan":
-        guests = [
-            Guest(id=f"guest-{index:03d}", name=name, gender=infer_gender(name))
-            for index, name in enumerate(names, start=1)
-        ]
+        guests = []
+        for index, entry in enumerate(names, start=1):
+            name, override = parse_guest_entry(entry)
+            guests.append(
+                Guest(
+                    id=f"guest-{index:03d}",
+                    name=name,
+                    gender=override or infer_gender(name),
+                )
+            )
         table_count = table_count or max(1, math.ceil(len(guests) / seats_per_table))
         seats = [
             Seat(id=index, table=index // seats_per_table, position=index % seats_per_table)
@@ -188,6 +259,11 @@ class SeatingPlan:
             if seat:
                 seat.guest_id = None
                 seat.locked = False
+
+    def set_gender(self, guest_id: str, gender: Gender) -> None:
+        if gender not in ("M", "F"):
+            raise ValueError("Gender must be M or F.")
+        self.guests[guest_id].gender = gender
 
     def toggle_lock(self, seat_id: int) -> bool:
         seat = self.seats[seat_id]

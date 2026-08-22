@@ -10,13 +10,35 @@ import unittest
 
 from generate_test_guests import generate_names
 from party_seat_planner import offset_after_zoom
-from seat_planner_model import SaveManager, SeatingPlan, infer_gender, read_guest_names
+from seat_planner_model import (
+    SaveManager,
+    SeatingPlan,
+    gender_database_available,
+    infer_gender,
+    parse_guest_entry,
+    read_guest_names,
+)
 
 
 class GenderInferenceTests(unittest.TestCase):
     def test_known_names(self) -> None:
         self.assertEqual(infer_gender("Charlotte Baker"), "F")
         self.assertEqual(infer_gender("Oliver Cooper"), "M")
+
+    def test_broad_offline_database_handles_custom_names(self) -> None:
+        self.assertTrue(gender_database_available())
+        self.assertEqual(infer_gender("Siobhan O'Brien"), "F")
+        self.assertEqual(infer_gender("Muhammad Khan"), "M")
+        self.assertEqual(infer_gender("Nathaniel Price"), "M")
+        self.assertEqual(infer_gender("Gertrude Evans"), "F")
+        self.assertEqual(infer_gender("Chloë Martin"), "F")
+
+    def test_titles_and_explicit_overrides(self) -> None:
+        self.assertEqual(infer_gender("Dr Charlotte Baker"), "F")
+        self.assertEqual(parse_guest_entry(" Alex Morgan | f "), ("Alex Morgan", "F"))
+        self.assertEqual(parse_guest_entry("Sam Taylor"), ("Sam Taylor", None))
+        with self.assertRaisesRegex(ValueError, "use 'Full Name"):
+            parse_guest_entry("Alex Morgan | X")
 
     def test_sample_generator_is_balanced_and_unique(self) -> None:
         names = generate_names(100, seed=42)
@@ -42,6 +64,16 @@ class SeatingPlanTests(unittest.TestCase):
         plan = SeatingPlan.from_names(["Sam Taylor", "Sam Taylor"])
         self.assertEqual(len(plan.guests), 2)
         self.assertNotEqual(*plan.guests.keys())
+
+    def test_guest_file_gender_override_and_editor_change(self) -> None:
+        plan = SeatingPlan.from_names(["Alex Morgan | F", "Sam Taylor | M"])
+        guests = list(plan.guests.values())
+        self.assertEqual([(guest.name, guest.gender) for guest in guests], [
+            ("Alex Morgan", "F"),
+            ("Sam Taylor", "M"),
+        ])
+        plan.set_gender(guests[0].id, "M")
+        self.assertEqual(guests[0].gender, "M")
 
     def test_clear_move_swap_and_bench(self) -> None:
         first = self.plan.seats[0].guest_id

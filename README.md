@@ -1,8 +1,8 @@
 # Party Seat Planner
 
 A clean visual desktop planner for four horizontal banquet tables, with 24 seats
-per table (12 along each side). It runs with Python's
-built-in Tkinter, so there are no packages to install.
+per table (12 along each side). It uses Python's built-in Tkinter plus a small
+offline first-name database for broader gender inference.
 
 The room has 96 seats in total. If the guest file contains more than 96 people,
 the extras start on the Bench and can be swapped into seats as needed.
@@ -10,11 +10,20 @@ the extras start on the Bench and can be swapped into seats as needed.
 ## Start it
 
 ```bash
+python3 -m pip install -r requirements.txt
 python3 party_seat_planner.py
 ```
 
 The included `guests.txt` contains 100 sample people. Replace it with your real
-list (one full name per line) and start the app again. A different text file can
+list (one full name per line) and start the app again. Names are inferred with UK
+weighting and never sent online. For an ambiguous name, add `| M` or `| F`:
+
+```text
+Alex Morgan | F
+Sam Taylor | M
+```
+
+A different text file can
 also be selected at launch:
 
 ```bash
@@ -37,7 +46,8 @@ python3 party_seat_planner.py --guests my_party.txt
 - **Alternate M / F** uses first-name inference and preserves locked seats. If
   the numbers or locked positions make a perfect pattern impossible, the app
   reports how many exceptions were needed.
-- **Edit guests** marks absentees; they appear in the grey Not Attending box.
+- **Edit guests** marks absentees and lets you correct any inferred M/F value;
+  absentees appear in the grey Not Attending box.
 - Saved plans are readable JSON files in the automatically created `saves`
   folder. Click a saved plan to load, rename, or delete it.
 
