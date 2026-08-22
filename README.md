@@ -4,8 +4,10 @@ A clean visual desktop planner for four horizontal banquet tables, with 24 seats
 per table (12 along each side). It uses Python's built-in Tkinter plus a small
 offline first-name database for broader gender inference.
 
-Python 3.7 or newer is supported, including the older Python versions commonly
-installed on Intel Macs.
+Python 3.8 or newer with Tk 8.6+ is supported. On macOS, use a current
+[python.org macOS installer](https://www.python.org/downloads/macos/) rather than
+Apple's older `/usr/bin/python3`, which can contain Tk 8.5 and crash while
+opening a window.
 
 The room has 96 seats in total. If the guest file contains more than 96 people,
 the extras start on the Bench and can be swapped into seats as needed.
@@ -15,6 +17,13 @@ the extras start on the Bench and can be swapped into seats as needed.
 ```bash
 python3 -m pip install -r requirements.txt
 python3 party_seat_planner.py
+```
+
+If a particular Mac has trouble with native trackpad gestures, safe mode keeps
+keyboard and Command+scroll zoom while disabling the native pinch bridge:
+
+```bash
+python3 party_seat_planner.py --no-native-pinch
 ```
 
 The included `guests.txt` contains 100 sample people. Replace it with your real

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import math
 from pathlib import Path
+import platform
 import random
 import tkinter as tk
 from tkinter import messagebox, simpledialog
@@ -61,10 +62,32 @@ def offset_after_zoom(
     return ratio * old_offset + (1 - ratio) * (focal_point - viewport_centre)
 
 
+def runtime_compatibility_issue(
+    system: str | None = None,
+    tk_version: float | None = None,
+) -> str | None:
+    """Return a safe, actionable error before an incompatible Tk can crash."""
+
+    system = system or platform.system()
+    tk_version = tk.TkVersion if tk_version is None else tk_version
+    if system == "Darwin" and tk_version < 8.6:
+        return (
+            f"This Python uses Tk {tk_version:.1f}, which can crash while opening windows on "
+            "current macOS versions. Install a current Python 3.13 macOS installer from "
+            "https://www.python.org/downloads/macos/, reopen Terminal, and try again."
+        )
+    return None
+
+
 class PartySeatPlanner(tk.Tk):
     """Main application window and Canvas-based interaction layer."""
 
-    def __init__(self, plan: SeatingPlan, guest_file: Path) -> None:
+    def __init__(
+        self,
+        plan: SeatingPlan,
+        guest_file: Path,
+        enable_native_pinch: bool = True,
+    ) -> None:
         super().__init__()
         self.plan = plan
         self.guest_file = guest_file
@@ -97,7 +120,15 @@ class PartySeatPlanner(tk.Tk):
         self._bind_canvas()
         self.after(80, self.draw_scene)
         self.after(120, self.refresh_saves)
-        self.after(180, self._enable_native_pinch)
+        if enable_native_pinch:
+            self.after(180, self._enable_native_pinch)
+        else:
+            self.after(
+                180,
+                lambda: self.set_status(
+                    "Native pinch is disabled; use ⌘+scroll or ⌘+/− to zoom."
+                ),
+            )
 
     # ---------- layout ----------
 
@@ -1381,9 +1412,13 @@ def find_guest_file(explicit: str | None = None) -> Path:
     )
 
 
-def create_app(guest_file: Path) -> PartySeatPlanner:
+def create_app(guest_file: Path, enable_native_pinch: bool = True) -> PartySeatPlanner:
     names = read_guest_names(guest_file)
-    return PartySeatPlanner(SeatingPlan.from_names(names), guest_file)
+    return PartySeatPlanner(
+        SeatingPlan.from_names(names),
+        guest_file,
+        enable_native_pinch=enable_native_pinch,
+    )
 
 
 def main() -> None:
@@ -1394,10 +1429,19 @@ def main() -> None:
         action="store_true",
         help="Open briefly, build the full interface, then exit automatically.",
     )
+    parser.add_argument(
+        "--no-native-pinch",
+        action="store_true",
+        help="Disable the native trackpad bridge; keyboard and Command+scroll zoom remain.",
+    )
     args = parser.parse_args()
+    compatibility_issue = runtime_compatibility_issue()
+    if compatibility_issue:
+        print(f"Party Seat Planner: {compatibility_issue}")
+        raise SystemExit(1)
     try:
         guest_file = find_guest_file(args.guests)
-        app = create_app(guest_file)
+        app = create_app(guest_file, enable_native_pinch=not args.no_native_pinch)
     except (OSError, ValueError) as error:
         print(f"Party Seat Planner: {error}")
         raise SystemExit(1) from error

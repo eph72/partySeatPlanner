@@ -40,6 +40,9 @@ class MacPinchBridge:
         if platform.system() != "Darwin":
             self.error = "Native pinch is only available on macOS."
             return
+        if tk.TkVersion < 8.6:
+            self.error = f"Tk {tk.TkVersion:.1f} is too old for native pinch support."
+            return
         try:
             self._attach()
         except (AttributeError, OSError, RuntimeError, ValueError) as error:

@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 from generate_test_guests import generate_names
-from party_seat_planner import offset_after_zoom
+from party_seat_planner import offset_after_zoom, runtime_compatibility_issue
 from seat_planner_model import (
     Guest,
     SaveManager,
@@ -26,6 +26,12 @@ class PythonCompatibilityTests(unittest.TestCase):
     def test_dataclasses_do_not_require_python_310_slots(self) -> None:
         self.assertNotIn("__slots__", Guest.__dict__)
         self.assertNotIn("__slots__", Seat.__dict__)
+
+    def test_old_macos_tk_is_rejected_before_window_creation(self) -> None:
+        issue = runtime_compatibility_issue(system="Darwin", tk_version=8.5)
+        self.assertIn("can crash", issue)
+        self.assertIsNone(runtime_compatibility_issue(system="Darwin", tk_version=8.6))
+        self.assertIsNone(runtime_compatibility_issue(system="Linux", tk_version=8.5))
 
 
 class GenderInferenceTests(unittest.TestCase):
