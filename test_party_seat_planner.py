@@ -10,11 +10,13 @@ import unittest
 
 from generate_test_guests import generate_names
 from party_seat_planner import offset_after_zoom, runtime_compatibility_issue
+from pdf_exports import _guest_assignment, _seated_guests, export_pdf_bundle
 from seat_planner_model import (
     Guest,
     SaveManager,
     Seat,
     SeatingPlan,
+    TableLayout,
     gender_database_available,
     infer_gender,
     parse_guest_entry,
@@ -32,6 +34,14 @@ class PythonCompatibilityTests(unittest.TestCase):
         self.assertIn("can crash", issue)
         self.assertIsNone(runtime_compatibility_issue(system="Darwin", tk_version=8.6))
         self.assertIsNone(runtime_compatibility_issue(system="Linux", tk_version=8.5))
+        self.assertIn(
+            "Python 3.9",
+            runtime_compatibility_issue(
+                system="Linux",
+                tk_version=8.6,
+                python_version=(3, 8),
+            ),
+        )
 
 
 class GenderInferenceTests(unittest.TestCase):
@@ -89,6 +99,17 @@ class SeatingPlanTests(unittest.TestCase):
         plan.set_gender(guests[0].id, "M")
         self.assertEqual(guests[0].gender, "M")
 
+    def test_add_and_rename_guest(self) -> None:
+        plan = SeatingPlan.from_names(["Alice Baker"])
+        added = plan.add_guest("Alex Morgan | F")
+        self.assertEqual((added.name, added.gender, added.attending), ("Alex Morgan", "F", True))
+        self.assertIn(added.id, plan.bench_guest_ids())
+        self.assertEqual(plan.rename_guest(added.id, "Sam Taylor | M"), "Sam Taylor")
+        self.assertEqual(added.gender, "M")
+        second = plan.add_guest("Jordan Price", gender="F", attending=False)
+        self.assertIn(second.id, plan.absent_guest_ids())
+        self.assertNotEqual(added.id, second.id)
+
     def test_clear_move_swap_and_bench(self) -> None:
         first = self.plan.seats[0].guest_id
         second = self.plan.seats[1].guest_id
@@ -131,6 +152,28 @@ class SeatingPlanTests(unittest.TestCase):
         self.assertEqual(self.plan.rename_table(1, "  Family   & Friends  "), "Family & Friends")
         self.assertEqual(self.plan.table_name(1), "Family & Friends")
 
+    def test_table_layout_can_be_round_or_gain_end_chairs(self) -> None:
+        moved = self.plan.set_table_layout(
+            0,
+            TableLayout(shape="round", seat_count=10),
+        )
+        self.assertEqual(moved, 14)
+        self.assertEqual(self.plan.table_layout(0).shape, "round")
+        self.assertEqual(len([seat for seat in self.plan.seats if seat.table == 0]), 10)
+        self.assertEqual(len(self.plan.bench_guest_ids()), 18)
+
+        moved = self.plan.set_table_layout(
+            1,
+            TableLayout(shape="rectangle", seat_count=24, end_chairs=True),
+        )
+        self.assertEqual(moved, 0)
+        self.assertEqual(self.plan.table_layout(1).capacity, 26)
+        self.assertEqual(len(self.plan.seats), 84)
+
+    def test_invalid_table_layout_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "between 2 and 30"):
+            self.plan.set_table_layout(0, TableLayout(shape="round", seat_count=1))
+
 
 class ZoomMathTests(unittest.TestCase):
     def test_focal_point_stays_fixed_when_zooming(self) -> None:
@@ -148,6 +191,8 @@ class SaveTests(unittest.TestCase):
         plan.clear_seat(5)
         plan.table_positions[0] = (0.2, 0.4)
         plan.rename_table(0, "Top Table")
+        plan.set_table_layout(1, TableLayout("round", 12))
+        plan.set_table_layout(2, TableLayout("rectangle", 20, True))
         with tempfile.TemporaryDirectory() as folder:
             manager = SaveManager(Path(folder) / "saves")
             path = manager.save(plan, "Saturday / final")
@@ -157,10 +202,47 @@ class SaveTests(unittest.TestCase):
             self.assertEqual(loaded.seats[2].locked, True)
             self.assertEqual(loaded.table_positions[0], (0.2, 0.4))
             self.assertEqual(loaded.table_name(0), "Top Table")
+            self.assertEqual(loaded.table_layout(1), TableLayout("round", 12, False))
+            self.assertEqual(loaded.table_layout(2), TableLayout("rectangle", 20, True))
             renamed = manager.rename(path, "Really final")
             self.assertTrue(renamed.exists())
             manager.delete(renamed)
             self.assertEqual(manager.list_saves(), [])
+
+    def test_pdf_bundle_contains_plan_and_alphabetical_directory(self) -> None:
+        plan = SeatingPlan.from_names(generate_names(100, seed=17))
+        plan.rename_table(0, "Family")
+        plan.set_table_layout(1, TableLayout("round", 12))
+        plan.set_table_layout(2, TableLayout("rectangle", 20, True))
+        absent_id = plan.seats[0].guest_id
+        plan.set_attending(absent_id, False)
+        with tempfile.TemporaryDirectory() as folder:
+            plan_path, guests_path = export_pdf_bundle(plan, Path(folder), "Sunday lunch")
+            self.assertEqual(plan_path.name, "Sunday lunch - seating plan.pdf")
+            self.assertEqual(guests_path.name, "Sunday lunch - guest list.pdf")
+            for path in (plan_path, guests_path):
+                self.assertTrue(path.read_bytes().startswith(b"%PDF-"))
+                self.assertGreater(path.stat().st_size, 1_000)
+            second_paths = export_pdf_bundle(plan, Path(folder), "Sunday lunch")
+            self.assertTrue(all("Sunday lunch 2" in path.name for path in second_paths))
+
+    def test_legacy_save_without_layout_settings_still_loads(self) -> None:
+        plan = SeatingPlan.from_names(generate_names(20, seed=8))
+        payload = plan.to_dict()
+        del payload["table_layouts"]
+        loaded = SeatingPlan.from_dict(payload)
+        self.assertEqual(loaded.table_layout(0), TableLayout("rectangle", 24, False))
+
+    def test_guest_directory_only_includes_seated_guests(self) -> None:
+        plan = SeatingPlan.from_names(["Alice Baker", "Ben Cooper", "Chloe Davis"])
+        plan.rename_table(0, "Family")
+        seated_id = plan.seats[0].guest_id
+        bench_id = plan.seats[1].guest_id
+        absent_id = plan.seats[2].guest_id
+        plan.move_guest_to_bench(bench_id)
+        plan.set_attending(absent_id, False)
+        self.assertEqual(_guest_assignment(plan, seated_id), "Table 1 - Family")
+        self.assertEqual([guest.id for guest in _seated_guests(plan)], [seated_id])
 
     def test_invalid_format_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as folder:

@@ -8,14 +8,18 @@ import math
 from pathlib import Path
 import platform
 import random
+import sys
 import tkinter as tk
-from tkinter import messagebox, simpledialog
+from tkinter import filedialog, messagebox, simpledialog
 
 from macos_pinch import attach_pinch
 from seat_planner_model import (
     SaveManager,
     SeatingPlan,
+    TableLayout,
     gender_database_available,
+    infer_gender,
+    parse_guest_entry,
     read_guest_names,
 )
 
@@ -65,11 +69,19 @@ def offset_after_zoom(
 def runtime_compatibility_issue(
     system: str | None = None,
     tk_version: float | None = None,
+    python_version: tuple[int, int] | None = None,
 ) -> str | None:
     """Return a safe, actionable error before an incompatible Tk can crash."""
 
     system = system or platform.system()
     tk_version = tk.TkVersion if tk_version is None else tk_version
+    python_version = sys.version_info[:2] if python_version is None else python_version
+    if python_version < (3, 9):
+        return (
+            f"This app needs Python 3.9 or newer; this interpreter is "
+            f"Python {python_version[0]}.{python_version[1]}. Install Python 3.13 from "
+            "https://www.python.org/downloads/ and try again."
+        )
     if system == "Darwin" and tk_version < 8.6:
         return (
             f"This Python uses Tk {tk_version:.1f}, which can crash while opening windows on "
@@ -166,6 +178,8 @@ class PartySeatPlanner(tk.Tk):
             "Alternate M / F", self.randomise_genders, COLOUR["blue"], COLOUR["blue_hover"]
         )
         self._sidebar_button("Edit guests", self.open_guest_editor, COLOUR["navy_2"], "#2C4264")
+        self._sidebar_button("Edit layout", self.open_layout_editor, COLOUR["navy_2"], "#2C4264")
+        self._sidebar_button("Export PDFs", self.export_pdfs, COLOUR["navy_2"], "#2C4264")
 
         tk.Frame(self.sidebar, height=1, bg="#33435C").pack(fill="x", padx=22, pady=16)
 
@@ -471,9 +485,26 @@ class PartySeatPlanner(tk.Tk):
 
     def _draw_table(self, table_id: int, cx: float, cy: float, scale: float) -> None:
         self.table_centres[table_id] = (cx, cy)
+        layout = self.plan.table_layout(table_id)
+        if layout.shape == "round":
+            self._draw_round_table(table_id, layout, cx, cy, scale)
+        else:
+            self._draw_rectangular_table(table_id, layout, cx, cy, scale)
+
+    def _draw_rectangular_table(
+        self,
+        table_id: int,
+        layout: TableLayout,
+        cx: float,
+        cy: float,
+        scale: float,
+    ) -> None:
         table_width = 790 * scale
         table_height = 46 * scale
-        seat_size = 50 * scale
+        top_count = (layout.seat_count + 1) // 2
+        bottom_count = layout.seat_count // 2
+        longest_side = max(1, top_count, bottom_count)
+        seat_size = min(50, max(29, (734 / longest_side) - 9)) * scale
         seat_gap = 11 * scale
         table_tag = f"table:{table_id}"
         self.table_bounds[table_id] = (
@@ -524,18 +555,102 @@ class PartySeatPlanner(tk.Tk):
         )
 
         for seat in table_seats:
-            # Positions follow the table clockwise: 0–11 left-to-right along
-            # the top, then 12–23 right-to-left along the bottom.
-            if seat.position < 12:
+            # Side seats run clockwise: left-to-right along the top, then
+            # right-to-left along the bottom. Optional end chairs come last.
+            if seat.position < top_count:
                 column = seat.position
+                columns = top_count
                 side = -1
-            else:
-                column = 23 - seat.position
+            elif seat.position < layout.seat_count:
+                column = bottom_count - 1 - (seat.position - top_count)
+                columns = bottom_count
                 side = 1
+            elif seat.position == layout.seat_count:
+                sx = cx - table_width / 2 - seat_gap - seat_size / 2
+                sy = cy
+                self.seat_centres[seat.id] = (sx, sy)
+                self._draw_seat(seat.id, sx, sy, seat_size)
+                continue
+            else:
+                sx = cx + table_width / 2 + seat_gap + seat_size / 2
+                sy = cy
+                self.seat_centres[seat.id] = (sx, sy)
+                self._draw_seat(seat.id, sx, sy, seat_size)
+                continue
             margin = 28 * scale
             usable_width = table_width - 2 * margin
-            sx = cx - table_width / 2 + margin + column * (usable_width / 11)
+            step = usable_width / max(1, columns - 1)
+            sx = cx if columns == 1 else cx - table_width / 2 + margin + column * step
             sy = cy + side * (table_height / 2 + seat_gap + seat_size / 2)
+            self.seat_centres[seat.id] = (sx, sy)
+            self._draw_seat(seat.id, sx, sy, seat_size)
+
+    def _draw_round_table(
+        self,
+        table_id: int,
+        layout: TableLayout,
+        cx: float,
+        cy: float,
+        scale: float,
+    ) -> None:
+        table_width = 100 * scale
+        table_height = 100 * scale
+        seat_size = min(48, max(27, (770 / layout.seat_count) - 2)) * scale
+        radius_x = 184 * scale
+        radius_y = 70 * scale
+        table_tag = f"table:{table_id}"
+        self.table_bounds[table_id] = (
+            cx - table_width / 2,
+            cy - table_height / 2,
+            cx + table_width / 2,
+            cy + table_height / 2,
+        )
+
+        self.canvas.create_oval(
+            cx - table_width / 2 + 4,
+            cy - table_height / 2 + 6,
+            cx + table_width / 2 + 4,
+            cy + table_height / 2 + 6,
+            fill=COLOUR["shadow"],
+            outline="",
+            tags=("scene", table_tag, "tablecore"),
+        )
+        self.canvas.create_oval(
+            cx - table_width / 2,
+            cy - table_height / 2,
+            cx + table_width / 2,
+            cy + table_height / 2,
+            fill=COLOUR["paper"],
+            outline="#CCD2DB",
+            width=2,
+            tags=("scene", table_tag, "tablecore"),
+        )
+        table_seats = sorted(
+            (seat for seat in self.plan.seats if seat.table == table_id),
+            key=lambda seat: seat.position,
+        )
+        occupied = sum(seat.guest_id is not None for seat in table_seats)
+        self.canvas.create_text(
+            cx,
+            cy - 8 * scale,
+            text=self.plan.table_name(table_id).upper(),
+            fill=COLOUR["ink"],
+            width=max(100, table_width - 24 * scale),
+            font=("Avenir Next", max(7, round(10 * scale)), "bold"),
+            tags=("scene", table_tag, "tablecore"),
+        )
+        self.canvas.create_text(
+            cx,
+            cy + 11 * scale,
+            text=f"{occupied} / {len(table_seats)}  •  ROUND",
+            fill=COLOUR["muted"],
+            font=("Avenir Next", max(7, round(8 * scale))),
+            tags=("scene", table_tag, "tablecore"),
+        )
+        for seat in table_seats:
+            angle = -math.pi / 2 + (2 * math.pi * seat.position / len(table_seats))
+            sx = cx + math.cos(angle) * radius_x
+            sy = cy + math.sin(angle) * radius_y
             self.seat_centres[seat.id] = (sx, sy)
             self._draw_seat(seat.id, sx, sy, seat_size)
 
@@ -976,6 +1091,271 @@ class PartySeatPlanner(tk.Tk):
         self._animate_shuffle()
         self.set_status(message)
 
+    def open_layout_editor(self) -> None:
+        editor = tk.Toplevel(self)
+        editor.title("Edit seating layout")
+        editor.geometry("790x510")
+        editor.resizable(False, False)
+        editor.transient(self)
+        editor.grab_set()
+        editor.configure(bg=COLOUR["paper"])
+
+        tk.Label(
+            editor,
+            text="Edit seating layout",
+            bg=COLOUR["paper"],
+            fg=COLOUR["ink"],
+            font=("Avenir Next", 22, "bold"),
+        ).pack(anchor="w", padx=28, pady=(24, 3))
+        tk.Label(
+            editor,
+            text=(
+                "Choose rectangular or round tables and adjust their capacity. "
+                "For rectangular tables, End chairs adds one chair at each end."
+            ),
+            bg=COLOUR["paper"],
+            fg=COLOUR["muted"],
+            font=("Avenir Next", 10),
+            wraplength=730,
+            justify="left",
+        ).pack(anchor="w", padx=29, pady=(0, 17))
+
+        grid = tk.Frame(editor, bg=COLOUR["paper"])
+        grid.pack(fill="x", padx=28)
+        headings = (("Table name", 0), ("Shape", 1), ("Side / round seats", 2), ("", 3))
+        for label, column in headings:
+            tk.Label(
+                grid,
+                text=label,
+                bg=COLOUR["paper"],
+                fg=COLOUR["muted"],
+                font=("Avenir Next", 9, "bold"),
+            ).grid(row=0, column=column, sticky="w", padx=(0, 12), pady=(0, 6))
+
+        name_variables: dict[int, tk.StringVar] = {}
+        shape_variables: dict[int, tk.StringVar] = {}
+        seat_variables: dict[int, tk.StringVar] = {}
+        end_variables: dict[int, tk.BooleanVar] = {}
+        end_controls: dict[int, tk.Checkbutton] = {}
+        capacity_variables: dict[int, tk.StringVar] = {}
+
+        def refresh_row(table_id: int) -> None:
+            is_round = shape_variables[table_id].get() == "Round"
+            end_controls[table_id].configure(state="disabled" if is_round else "normal")
+            try:
+                seats = int(seat_variables[table_id].get())
+            except ValueError:
+                seats = 0
+            total = seats + (2 if end_variables[table_id].get() and not is_round else 0)
+            capacity_variables[table_id].set(f"{total} total")
+
+        for table_id in range(self.plan.table_count):
+            layout = self.plan.table_layout(table_id)
+            row = table_id + 1
+            name_variables[table_id] = tk.StringVar(value=self.plan.table_name(table_id))
+            shape_variables[table_id] = tk.StringVar(
+                value="Round" if layout.shape == "round" else "Rectangular"
+            )
+            seat_variables[table_id] = tk.StringVar(value=str(layout.seat_count))
+            end_variables[table_id] = tk.BooleanVar(value=layout.end_chairs)
+            capacity_variables[table_id] = tk.StringVar()
+
+            name_entry = tk.Entry(
+                grid,
+                textvariable=name_variables[table_id],
+                width=27,
+                bg="white",
+                fg=COLOUR["ink"],
+                relief="solid",
+                bd=1,
+                font=("Avenir Next", 10),
+            )
+            name_entry.grid(row=row, column=0, sticky="ew", padx=(0, 12), pady=7, ipady=6)
+
+            shape_menu = tk.OptionMenu(
+                grid,
+                shape_variables[table_id],
+                "Rectangular",
+                "Round",
+            )
+            shape_menu.configure(
+                width=12,
+                bg="#EEF1F5",
+                fg=COLOUR["ink"],
+                activebackground="#E2E7ED",
+                highlightthickness=0,
+                bd=0,
+                font=("Avenir Next", 10),
+            )
+            shape_menu["menu"].configure(font=("Avenir Next", 10))
+            shape_menu.grid(row=row, column=1, sticky="w", padx=(0, 12), pady=7)
+
+            seat_box = tk.Spinbox(
+                grid,
+                from_=2,
+                to=30,
+                increment=1,
+                textvariable=seat_variables[table_id],
+                width=6,
+                justify="center",
+                bg="white",
+                fg=COLOUR["ink"],
+                buttonbackground="#E5E9EE",
+                relief="solid",
+                bd=1,
+                font=("Avenir Next", 10),
+                command=lambda selected=table_id: refresh_row(selected),
+            )
+            seat_box.grid(row=row, column=2, sticky="w", padx=(0, 12), pady=7, ipady=5)
+
+            end_control = tk.Checkbutton(
+                grid,
+                text="End chairs (+2)",
+                variable=end_variables[table_id],
+                command=lambda selected=table_id: refresh_row(selected),
+                bg=COLOUR["paper"],
+                fg=COLOUR["ink"],
+                activebackground=COLOUR["paper"],
+                selectcolor=COLOUR["paper"],
+                font=("Avenir Next", 10),
+            )
+            end_control.grid(row=row, column=3, sticky="w", pady=7)
+            end_controls[table_id] = end_control
+            tk.Label(
+                grid,
+                textvariable=capacity_variables[table_id],
+                bg=COLOUR["paper"],
+                fg=COLOUR["muted"],
+                font=("Avenir Next", 8),
+            ).grid(row=row, column=4, sticky="w", padx=(7, 0))
+
+            shape_variables[table_id].trace_add(
+                "write", lambda *_args, selected=table_id: refresh_row(selected)
+            )
+            seat_variables[table_id].trace_add(
+                "write", lambda *_args, selected=table_id: refresh_row(selected)
+            )
+            refresh_row(table_id)
+
+        grid.grid_columnconfigure(0, weight=1)
+
+        footer = tk.Frame(editor, bg=COLOUR["paper"])
+        footer.pack(side="bottom", fill="x", padx=28, pady=24)
+
+        def apply_layout() -> None:
+            requested: list[tuple[int, str, TableLayout]] = []
+            displaced = 0
+            try:
+                for table_id in range(self.plan.table_count):
+                    shape = "round" if shape_variables[table_id].get() == "Round" else "rectangle"
+                    layout = self.plan.validated_table_layout(
+                        shape,
+                        int(seat_variables[table_id].get()),
+                        end_variables[table_id].get(),
+                    )
+                    name = " ".join(name_variables[table_id].get().split())
+                    current_seats = sorted(
+                        (seat for seat in self.plan.seats if seat.table == table_id),
+                        key=lambda seat: seat.position,
+                    )
+                    displaced += sum(
+                        seat.guest_id is not None for seat in current_seats[layout.capacity :]
+                    )
+                    requested.append((table_id, name, layout))
+            except ValueError as error:
+                messagebox.showerror("Invalid table layout", str(error), parent=editor)
+                return
+
+            if displaced and not messagebox.askyesno(
+                "Reduce table capacity?",
+                f"This will move {displaced} seated guest{'s' if displaced != 1 else ''} "
+                "to the Bench. Continue?",
+                parent=editor,
+            ):
+                return
+
+            moved = 0
+            for table_id, name, layout in requested:
+                self.plan.rename_table(table_id, name)
+                moved += self.plan.set_table_layout(table_id, layout)
+            editor.destroy()
+            self.bench_page = 0
+            self.draw_scene()
+            self._flash_canvas(COLOUR["blue"])
+            detail = (
+                f" {moved} guest{'s were' if moved != 1 else ' was'} moved to the Bench."
+                if moved
+                else ""
+            )
+            self.set_status(f"Seating layout updated.{detail}")
+
+        cancel = tk.Label(
+            footer,
+            text="Cancel",
+            bg="#E8EBEF",
+            fg=COLOUR["ink"],
+            cursor="hand2",
+            font=("Avenir Next", 10, "bold"),
+            padx=18,
+            pady=9,
+        )
+        cancel.pack(side="right", padx=(8, 0))
+        cancel.bind("<Button-1>", lambda _event: editor.destroy())
+        apply_button = tk.Label(
+            footer,
+            text="Apply layout",
+            bg=COLOUR["green"],
+            fg="white",
+            cursor="hand2",
+            font=("Avenir Next", 10, "bold"),
+            padx=18,
+            pady=9,
+        )
+        apply_button.pack(side="right")
+        apply_button.bind("<Button-1>", lambda _event: apply_layout())
+        apply_button.bind("<Enter>", lambda _event: apply_button.configure(bg=COLOUR["green_hover"]))
+        apply_button.bind("<Leave>", lambda _event: apply_button.configure(bg=COLOUR["green"]))
+
+    def export_pdfs(self) -> None:
+        display_name = simpledialog.askstring(
+            "Export PDFs",
+            "Name these exports:",
+            initialvalue="Party seating",
+            parent=self,
+        )
+        if not display_name:
+            return
+        default_folder = APP_DIR / "exports"
+        default_folder.mkdir(exist_ok=True)
+        selected_folder = filedialog.askdirectory(
+            title="Choose a folder for both PDFs",
+            initialdir=default_folder,
+            mustexist=True,
+            parent=self,
+        )
+        if not selected_folder:
+            return
+        try:
+            from pdf_exports import export_pdf_bundle
+
+            self.set_status("Creating seating-plan and guest-list PDFs...")
+            self.update_idletasks()
+            plan_path, guests_path = export_pdf_bundle(
+                self.plan,
+                Path(selected_folder),
+                display_name,
+            )
+        except (ImportError, OSError, ValueError) as error:
+            messagebox.showerror("Could not export PDFs", str(error), parent=self)
+            return
+        self._flash_canvas(COLOUR["green"])
+        self.set_status("Exported the seating plan and alphabetical guest list.")
+        messagebox.showinfo(
+            "PDFs exported",
+            f"Created:\n\n{plan_path.name}\n{guests_path.name}\n\nSaved in:\n{plan_path.parent}",
+            parent=self,
+        )
+
     def save_current(self) -> None:
         default = f"Plan {len(self.save_manager.list_saves()) + 1}"
         name = simpledialog.askstring("Save seating plan", "Name this plan:", initialvalue=default, parent=self)
@@ -1141,9 +1521,13 @@ class PartySeatPlanner(tk.Tk):
 
         attendance_variables: dict[str, tk.BooleanVar] = {}
         gender_variables: dict[str, tk.StringVar] = {}
+        name_variables: dict[str, tk.StringVar] = {}
         rows: dict[str, tk.Frame] = {}
         checks: dict[str, tk.Checkbutton] = {}
         gender_buttons: dict[str, tuple[tk.Radiobutton, tk.Radiobutton]] = {}
+        rename_buttons: dict[str, tk.Label] = {}
+        new_guest_ids: set[str] = set()
+        draft_counter = 0
 
         def restyle(guest_id: str) -> None:
             active = attendance_variables[guest_id].get()
@@ -1162,6 +1546,62 @@ class PartySeatPlanner(tk.Tk):
                     bg=background,
                     activebackground=background,
                 )
+            rename_buttons[guest_id].configure(
+                fg=COLOUR["blue"] if active else COLOUR["absent_text"],
+                bg=background,
+            )
+
+        def reorder_rows() -> None:
+            ordered_ids = sorted(
+                rows,
+                key=lambda guest_id: (name_variables[guest_id].get().casefold(), guest_id),
+            )
+            for guest_id in ordered_ids:
+                rows[guest_id].pack_forget()
+                rows[guest_id].pack(fill="x", padx=5, pady=1)
+
+        def rename_guest_in_editor(guest_id: str) -> None:
+            proposed = simpledialog.askstring(
+                "Rename guest",
+                "Guest name:",
+                initialvalue=name_variables[guest_id].get(),
+                parent=editor,
+            )
+            if proposed is None:
+                return
+            try:
+                name, override = parse_guest_entry(proposed)
+            except ValueError as error:
+                messagebox.showerror("Invalid guest name", str(error), parent=editor)
+                return
+            name_variables[guest_id].set(name)
+            if override:
+                gender_variables[guest_id].set(override)
+            reorder_rows()
+
+        def add_guest_to_editor() -> None:
+            nonlocal draft_counter
+            proposed = simpledialog.askstring(
+                "Add guest",
+                "Full name (optionally followed by | M or | F):",
+                parent=editor,
+            )
+            if proposed is None:
+                return
+            try:
+                name, override = parse_guest_entry(proposed)
+            except ValueError as error:
+                messagebox.showerror("Invalid guest name", str(error), parent=editor)
+                return
+            draft_counter += 1
+            guest_id = f"new-guest-{draft_counter:03d}"
+            new_guest_ids.add(guest_id)
+            attendance_variables[guest_id] = tk.BooleanVar(value=True)
+            gender_variables[guest_id] = tk.StringVar(value=override or infer_gender(name))
+            name_variables[guest_id] = tk.StringVar(value=name)
+            create_guest_row(guest_id)
+            reorder_rows()
+            editor.after_idle(lambda: guest_canvas.yview_moveto(1.0))
 
         def set_all_attendance(attending: bool) -> None:
             for guest_id, variable in attendance_variables.items():
@@ -1170,6 +1610,12 @@ class PartySeatPlanner(tk.Tk):
 
         bulk_controls = tk.Frame(editor, bg=COLOUR["paper"])
         bulk_controls.pack(fill="x", padx=21, pady=(0, 10))
+        self._dialog_button(
+            bulk_controls,
+            "Add guest",
+            add_guest_to_editor,
+            COLOUR["blue"],
+        )
         self._dialog_button(
             bulk_controls,
             "Check all",
@@ -1195,18 +1641,14 @@ class PartySeatPlanner(tk.Tk):
         inner.bind("<Configure>", lambda _e: guest_canvas.configure(scrollregion=guest_canvas.bbox("all")))
         guest_canvas.bind("<Configure>", lambda e: guest_canvas.itemconfigure(window, width=e.width))
 
-        for guest in sorted(self.plan.guests.values(), key=lambda item: (item.name.lower(), item.id)):
-            attendance = tk.BooleanVar(value=guest.attending)
-            gender = tk.StringVar(value=guest.gender)
-            attendance_variables[guest.id] = attendance
-            gender_variables[guest.id] = gender
+        def create_guest_row(guest_id: str) -> None:
             row = tk.Frame(inner, bg="#F3F4F6")
             row.pack(fill="x", padx=5, pady=1)
             check = tk.Checkbutton(
                 row,
-                text=guest.name,
-                variable=attendance,
-                command=lambda guest_id=guest.id: restyle(guest_id),
+                textvariable=name_variables[guest_id],
+                variable=attendance_variables[guest_id],
+                command=lambda selected_id=guest_id: restyle(selected_id),
                 anchor="w",
                 bg="#F3F4F6",
                 fg=COLOUR["ink"],
@@ -1222,7 +1664,7 @@ class PartySeatPlanner(tk.Tk):
             female = tk.Radiobutton(
                 row,
                 text="F",
-                variable=gender,
+                variable=gender_variables[guest_id],
                 value="F",
                 bg="#F3F4F6",
                 fg=COLOUR["ink"],
@@ -1235,7 +1677,7 @@ class PartySeatPlanner(tk.Tk):
             male = tk.Radiobutton(
                 row,
                 text="M",
-                variable=gender,
+                variable=gender_variables[guest_id],
                 value="M",
                 bg="#F3F4F6",
                 fg=COLOUR["ink"],
@@ -1245,24 +1687,62 @@ class PartySeatPlanner(tk.Tk):
                 bd=0,
                 padx=8,
             )
+            rename = tk.Label(
+                row,
+                text="Rename",
+                bg="#F3F4F6",
+                fg=COLOUR["blue"],
+                cursor="hand2",
+                font=("Avenir Next", 9, "bold"),
+                padx=8,
+                pady=5,
+            )
+            rename.pack(side="right", padx=(0, 6))
             female.pack(side="right", padx=(0, 8))
             male.pack(side="right")
-            rows[guest.id] = row
-            checks[guest.id] = check
-            gender_buttons[guest.id] = (male, female)
-            restyle(guest.id)
+            rows[guest_id] = row
+            checks[guest_id] = check
+            gender_buttons[guest_id] = (male, female)
+            rename_buttons[guest_id] = rename
+            rename.bind(
+                "<Button-1>",
+                lambda _event, selected_id=guest_id: rename_guest_in_editor(selected_id),
+            )
+            rename.bind("<Enter>", lambda _event, item=rename: item.configure(relief="raised"))
+            rename.bind("<Leave>", lambda _event, item=rename: item.configure(relief="flat"))
+            restyle(guest_id)
+
+        for guest in sorted(self.plan.guests.values(), key=lambda item: (item.name.lower(), item.id)):
+            attendance_variables[guest.id] = tk.BooleanVar(value=guest.attending)
+            gender_variables[guest.id] = tk.StringVar(value=guest.gender)
+            name_variables[guest.id] = tk.StringVar(value=guest.name)
+            create_guest_row(guest.id)
 
         footer = tk.Frame(editor, bg=COLOUR["paper"])
         footer.pack(fill="x", padx=26, pady=18)
 
         def apply_changes() -> None:
+            added_guests = 0
+            renamed_guests = 0
             attendance_changes = 0
             gender_changes = 0
             for guest_id, variable in attendance_variables.items():
+                selected_gender = gender_variables[guest_id].get()
+                selected_name = name_variables[guest_id].get()
+                if guest_id in new_guest_ids:
+                    self.plan.add_guest(
+                        selected_name,
+                        gender=selected_gender,
+                        attending=variable.get(),
+                    )
+                    added_guests += 1
+                    continue
+                if self.plan.guests[guest_id].name != selected_name:
+                    self.plan.rename_guest(guest_id, selected_name)
+                    renamed_guests += 1
                 if self.plan.guests[guest_id].attending != variable.get():
                     self.plan.set_attending(guest_id, variable.get())
                     attendance_changes += 1
-                selected_gender = gender_variables[guest_id].get()
                 if self.plan.guests[guest_id].gender != selected_gender:
                     self.plan.set_gender(guest_id, selected_gender)
                     gender_changes += 1
@@ -1270,9 +1750,13 @@ class PartySeatPlanner(tk.Tk):
             self.bench_page = self.absent_page = 0
             self.draw_scene()
             self._flash_canvas(COLOUR["blue"])
-            total = attendance_changes + gender_changes
+            total = added_guests + renamed_guests + attendance_changes + gender_changes
             if total:
                 parts = []
+                if added_guests:
+                    parts.append(f"{added_guests} added")
+                if renamed_guests:
+                    parts.append(f"{renamed_guests} renamed")
                 if attendance_changes:
                     parts.append(
                         f"{attendance_changes} attendance "

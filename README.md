@@ -1,8 +1,8 @@
 # Party Seat Planner
 
-A visual desktop seating planner for parties and wedding receptions. It displays
-four horizontal banquet tables with 24 seats each, giving 96 seats in total.
-Extra guests wait on the Bench until a seat becomes available.
+A visual desktop seating planner for parties and wedding receptions. It starts
+with four horizontal banquet tables with 24 seats each, giving 96 seats in
+total. Extra guests wait on the Bench until a seat becomes available.
 
 ## Features
 
@@ -13,13 +13,17 @@ Extra guests wait on the Bench until a seat becomes available.
 - Clear guests to a Bench and drag them back when ready.
 - Mark guests as not attending in an alphabetical guest editor.
 - Correct an inferred M/F value in the editor or directly in the guest file.
+- Add guests and rename existing guests from the editor.
 - Drag, rename and arrange all four tables.
+- Change each table to rectangular or round and adjust its number of seats.
+- Add one chair at each end of any rectangular table.
 - Pinch to zoom on supported Mac trackpads, with keyboard and scroll fallbacks.
 - Save, load, rename and delete seating plans from inside the app.
+- Export a monochrome seating plan and alphabetical guest directory as PDFs.
 
 ## Requirements
 
-- Python 3.8 or newer.
+- Python 3.9 or newer.
 - Tk 8.6 or newer.
 - Git, if cloning or updating the project from GitHub.
 - macOS, Windows or Linux. Native trackpad pinch support is macOS-only.
@@ -80,6 +84,16 @@ python3.13 -m venv .venv
 
 For later launches, open Terminal, return to the project folder and run the same
 start command. The virtual environment only needs to be created once.
+
+### Double-click launch on macOS
+
+After cloning, you can instead double-click `run_party_seat_planner.command` in
+Finder. On its first launch it finds a compatible Python, creates `.venv`,
+installs the offline name database and PDF exporter, then starts the app. Later
+launches start the app immediately.
+
+If macOS asks for confirmation the first time, right-click the file, choose
+**Open**, then confirm **Open**.
 
 ## Install on Windows
 
@@ -170,6 +184,9 @@ Bench and can be swapped into the plan by dragging.
 | Alternate M/F seating | Click **Alternate M / F** |
 | Change attendance or M/F | Click **Edit guests** |
 | Change everyone at once | Click **Check all** or **Uncheck all** in **Edit guests** |
+| Add or rename a guest | Use **Add guest** or **Rename** in **Edit guests** |
+| Change table shape or capacity | Click **Edit layout** |
+| Export both PDFs | Click **Export PDFs**, name the export and choose a folder |
 | Zoom on a Mac trackpad | Pinch with two fingers |
 | Zoom fallback on macOS | Command+scroll or Command+plus/minus |
 | Reset the view on macOS | Command+0 |
@@ -190,7 +207,28 @@ A save includes:
 
 - guest attendance and corrected M/F values;
 - seat assignments and locks;
-- table positions and custom table names.
+- table positions, custom table names, shapes, capacities and end chairs.
+
+## Custom table layouts
+
+Click **Edit layout** to choose **Rectangular** or **Round** for each table and
+set between 2 and 30 side/round seats. For a rectangular table, **End chairs**
+adds one extra chair at each end. Reducing capacity keeps the earliest seats and
+moves any displaced guests to the Bench after asking for confirmation.
+
+## PDF exports
+
+Click **Export PDFs** in the sidebar, enter a name and choose a destination
+folder. The app creates two files without overwriting earlier exports:
+
+- a one-page A3 landscape seating plan showing all four tables in their selected
+  rectangular or round shapes;
+- an A4 alphabetical guest directory showing each seated guest's table
+  number/name.
+
+The seating-plan PDF is monochrome and deliberately omits all seat colours and
+lock indicators, making it suitable for printing or sharing with a venue.
+Guests on the Bench or marked not attending are omitted from both exports.
 
 ## Updating an existing installation
 

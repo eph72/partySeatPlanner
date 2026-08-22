@@ -25,6 +25,7 @@ except ImportError:  # Keep the app usable until requirements.txt is installed.
 TABLE_COUNT = 4
 SEATS_PER_TABLE = 24
 Gender = Literal["M", "F"]
+TableShape = Literal["rectangle", "round"]
 
 
 _GENDER_DETECTOR = (
@@ -172,6 +173,20 @@ class Seat:
     locked: bool = False
 
 
+@dataclass
+class TableLayout:
+    """The editable shape and capacity settings for one table."""
+
+    shape: TableShape = "rectangle"
+    seat_count: int = SEATS_PER_TABLE
+    end_chairs: bool = False
+
+    @property
+    def capacity(self) -> int:
+        extra = 2 if self.shape == "rectangle" and self.end_chairs else 0
+        return self.seat_count + extra
+
+
 class SeatingPlan:
     """Mutable seating state with rules shared by the GUI and tests."""
 
@@ -181,11 +196,22 @@ class SeatingPlan:
         seats: Iterable[Seat],
         table_positions: dict[int, tuple[float, float]] | None = None,
         table_names: dict[int, str] | None = None,
+        table_layouts: dict[int, TableLayout] | None = None,
     ) -> None:
         self.guests = {guest.id: guest for guest in guests}
         self.seats = list(seats)
         self.table_positions = table_positions or {}
         self.table_names = table_names or {}
+        self.table_layouts = table_layouts or {}
+        for table_id in range(self.table_count):
+            actual_capacity = sum(seat.table == table_id for seat in self.seats)
+            layout = self.table_layouts.get(table_id)
+            if layout is None or layout.capacity != actual_capacity:
+                self.table_layouts[table_id] = TableLayout(
+                    shape="rectangle",
+                    seat_count=actual_capacity,
+                    end_chairs=False,
+                )
 
     @classmethod
     def from_names(
@@ -220,6 +246,66 @@ class SeatingPlan:
 
     def table_name(self, table_id: int) -> str:
         return self.table_names.get(table_id, f"Table {table_id + 1}")
+
+    def table_layout(self, table_id: int) -> TableLayout:
+        if not 0 <= table_id < self.table_count:
+            raise ValueError("Unknown table.")
+        return self.table_layouts[table_id]
+
+    @staticmethod
+    def validated_table_layout(
+        shape: str,
+        seat_count: int,
+        end_chairs: bool = False,
+    ) -> TableLayout:
+        if shape not in ("rectangle", "round"):
+            raise ValueError("Table shape must be rectangle or round.")
+        if not 2 <= seat_count <= 30:
+            raise ValueError("Each table must have between 2 and 30 side/round seats.")
+        return TableLayout(
+            shape=shape,
+            seat_count=seat_count,
+            end_chairs=bool(end_chairs) if shape == "rectangle" else False,
+        )
+
+    def set_table_layout(self, table_id: int, layout: TableLayout) -> int:
+        """Apply one table layout and return the number moved to the Bench."""
+
+        if not 0 <= table_id < self.table_count:
+            raise ValueError("Unknown table.")
+        selected = self.validated_table_layout(
+            layout.shape,
+            int(layout.seat_count),
+            layout.end_chairs,
+        )
+        old_seats = {
+            current_table: sorted(
+                (seat for seat in self.seats if seat.table == current_table),
+                key=lambda seat: seat.position,
+            )
+            for current_table in range(self.table_count)
+        }
+        removed = old_seats[table_id][selected.capacity :]
+        moved_to_bench = sum(seat.guest_id is not None for seat in removed)
+        self.table_layouts[table_id] = selected
+
+        rebuilt: list[Seat] = []
+        for current_table in range(self.table_count):
+            capacity = self.table_layouts[current_table].capacity
+            previous = old_seats[current_table]
+            for position in range(capacity):
+                old = previous[position] if position < len(previous) else None
+                rebuilt.append(
+                    Seat(
+                        id=len(rebuilt),
+                        table=current_table,
+                        position=position,
+                        guest_id=old.guest_id if old else None,
+                        locked=old.locked if old else False,
+                    )
+                )
+        self.seats = rebuilt
+        return moved_to_bench
 
     def rename_table(self, table_id: int, name: str) -> str:
         if not 0 <= table_id < self.table_count:
@@ -264,6 +350,40 @@ class SeatingPlan:
         if gender not in ("M", "F"):
             raise ValueError("Gender must be M or F.")
         self.guests[guest_id].gender = gender
+
+    def add_guest(
+        self,
+        entry: str,
+        gender: Gender | None = None,
+        attending: bool = True,
+    ) -> Guest:
+        """Add an unseated guest, ready on the Bench when attending."""
+
+        name, entry_gender = parse_guest_entry(entry)
+        selected_gender = gender or entry_gender or infer_gender(name)
+        if selected_gender not in ("M", "F"):
+            raise ValueError("Gender must be M or F.")
+        index = 1
+        while f"guest-{index:03d}" in self.guests:
+            index += 1
+        guest = Guest(
+            id=f"guest-{index:03d}",
+            name=name,
+            gender=selected_gender,
+            attending=attending,
+        )
+        self.guests[guest.id] = guest
+        return guest
+
+    def rename_guest(self, guest_id: str, entry: str) -> str:
+        """Rename a guest and honour an optional ``| M/F`` correction."""
+
+        name, entry_gender = parse_guest_entry(entry)
+        guest = self.guests[guest_id]
+        guest.name = name[:80]
+        if entry_gender:
+            guest.gender = entry_gender
+        return guest.name
 
     def toggle_lock(self, seat_id: int) -> bool:
         seat = self.seats[seat_id]
@@ -406,6 +526,10 @@ class SeatingPlan:
             "table_names": {
                 str(table): name for table, name in self.table_names.items()
             },
+            "table_layouts": {
+                str(table): asdict(layout)
+                for table, layout in self.table_layouts.items()
+            },
         }
 
     @classmethod
@@ -421,7 +545,15 @@ class SeatingPlan:
         names = {
             int(table): str(name) for table, name in data.get("table_names", {}).items()
         }
-        plan = cls(guests, seats, positions, names)
+        layouts = {
+            int(table): cls.validated_table_layout(
+                str(item.get("shape", "rectangle")),
+                int(item.get("seat_count", SEATS_PER_TABLE)),
+                bool(item.get("end_chairs", False)),
+            )
+            for table, item in data.get("table_layouts", {}).items()
+        }
+        plan = cls(guests, seats, positions, names, layouts)
         valid_ids = set(plan.guests)
         seen = set()
         for seat in plan.seats:
