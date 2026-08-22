@@ -10,6 +10,7 @@ import random
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 
+from macos_pinch import attach_pinch
 from seat_planner_model import SaveManager, SeatingPlan, read_guest_names
 
 
@@ -40,6 +41,19 @@ COLOUR = {
 }
 
 
+def offset_after_zoom(
+    old_offset: float,
+    old_zoom: float,
+    new_zoom: float,
+    focal_point: float,
+    viewport_centre: float,
+) -> float:
+    """Return the offset that keeps one screen point fixed while zooming."""
+
+    ratio = new_zoom / old_zoom
+    return ratio * old_offset + (1 - ratio) * (focal_point - viewport_centre)
+
+
 class PartySeatPlanner(tk.Tk):
     """Main application window and Canvas-based interaction layer."""
 
@@ -56,8 +70,13 @@ class PartySeatPlanner(tk.Tk):
 
         self.seat_centres: dict[int, tuple[float, float]] = {}
         self.table_centres: dict[int, tuple[float, float]] = {}
+        self.table_bounds: dict[int, tuple[float, float, float, float]] = {}
         self.bench_rect = (0.0, 0.0, 0.0, 0.0)
         self.absent_rect = (0.0, 0.0, 0.0, 0.0)
+        self.zoom_factor = 1.0
+        self.view_offset_x = 0.0
+        self.view_offset_y = 0.0
+        self._pinch_bridge = None
         self.drag_guest_id: str | None = None
         self.drag_table_id: int | None = None
         self.drag_offset = (0.0, 0.0)
@@ -71,6 +90,7 @@ class PartySeatPlanner(tk.Tk):
         self._bind_canvas()
         self.after(80, self.draw_scene)
         self.after(120, self.refresh_saves)
+        self.after(180, self._enable_native_pinch)
 
     # ---------- layout ----------
 
@@ -214,11 +234,125 @@ class PartySeatPlanner(tk.Tk):
         self.canvas.bind("<Control-Button-1>", self._on_right_click)
         self.canvas.bind("<Button-2>", self._on_right_click)
         self.canvas.bind("<Button-3>", self._on_right_click)
+        self.canvas.bind("<Command-MouseWheel>", self._on_zoom_wheel)
+        self.canvas.bind("<Control-MouseWheel>", self._on_zoom_wheel)
+        self.canvas.bind("<MouseWheel>", self._on_pan_wheel)
+        self.canvas.bind("<Shift-MouseWheel>", self._on_horizontal_pan_wheel)
+        self.bind("<Command-0>", self._reset_view)
+        self.bind("<Control-0>", self._reset_view)
+        self.bind("<Command-plus>", lambda event: self._keyboard_zoom(1.12, event))
+        self.bind("<Command-equal>", lambda event: self._keyboard_zoom(1.12, event))
+        self.bind("<Command-minus>", lambda event: self._keyboard_zoom(1 / 1.12, event))
+        self.bind("<Control-plus>", lambda event: self._keyboard_zoom(1.12, event))
+        self.bind("<Control-minus>", lambda event: self._keyboard_zoom(1 / 1.12, event))
 
     def _on_canvas_resize(self, _event) -> None:
         if self._redraw_job:
             self.after_cancel(self._redraw_job)
         self._redraw_job = self.after(40, self.draw_scene)
+
+    def _enable_native_pinch(self) -> None:
+        self._pinch_bridge = attach_pinch(self.canvas, self._on_native_pinch)
+        if not self._pinch_bridge.available:
+            self.set_status(
+                "Native pinch was unavailable; use ⌘+scroll or ⌘+/− to zoom."
+            )
+
+    def _on_native_pinch(self, amount: float) -> None:
+        x = self.canvas.winfo_pointerx() - self.canvas.winfo_rootx()
+        y = self.canvas.winfo_pointery() - self.canvas.winfo_rooty()
+        if not (0 <= x <= self.canvas.winfo_width() and 0 <= y <= self.canvas.winfo_height()):
+            x = self.canvas.winfo_width() / 2
+            y = self.canvas.winfo_height() / 2
+        self._apply_zoom(max(0.82, min(1.18, 1.0 + amount)), x, y)
+
+    def _on_zoom_wheel(self, event) -> str:
+        delta = float(event.delta)
+        steps = delta if abs(delta) < 20 else delta / 120
+        self._apply_zoom(1.08 ** steps, event.x, event.y)
+        return "break"
+
+    def _keyboard_zoom(self, factor: float, _event=None) -> str:
+        self._apply_zoom(
+            factor,
+            self.canvas.winfo_width() / 2,
+            (58 + self.canvas.winfo_height() - 183) / 2,
+        )
+        return "break"
+
+    def _on_pan_wheel(self, event) -> str:
+        if self.zoom_factor <= 1.0:
+            return "break"
+        delta = float(event.delta)
+        units = delta if abs(delta) < 20 else delta / 120
+        self.view_offset_y += units * 14
+        self._clamp_view_offset()
+        self.draw_scene()
+        return "break"
+
+    def _on_horizontal_pan_wheel(self, event) -> str:
+        if self.zoom_factor <= 1.0:
+            return "break"
+        delta = float(event.delta)
+        units = delta if abs(delta) < 20 else delta / 120
+        self.view_offset_x += units * 14
+        self._clamp_view_offset()
+        self.draw_scene()
+        return "break"
+
+    def _apply_zoom(self, factor: float, focal_x: float, focal_y: float) -> None:
+        old_zoom = self.zoom_factor
+        new_zoom = max(0.60, min(2.40, old_zoom * factor))
+        if abs(new_zoom - old_zoom) < 0.0001:
+            return
+        width = max(self.canvas.winfo_width(), 700)
+        height = max(self.canvas.winfo_height(), 600)
+        stage_top = 58
+        stage_bottom = height - 183
+        centre_x = width / 2
+        centre_y = (stage_top + stage_bottom) / 2
+        self.view_offset_x = offset_after_zoom(
+            self.view_offset_x, old_zoom, new_zoom, focal_x, centre_x
+        )
+        self.view_offset_y = offset_after_zoom(
+            self.view_offset_y, old_zoom, new_zoom, focal_y, centre_y
+        )
+        self.zoom_factor = new_zoom
+        if abs(new_zoom - 1.0) < 0.015:
+            self.zoom_factor = 1.0
+            self.view_offset_x = 0.0
+            self.view_offset_y = 0.0
+        self._clamp_view_offset()
+        self.draw_scene()
+        self.status_var.set(f"View zoom: {round(self.zoom_factor * 100)}%  ·  ⌘0 resets")
+
+    def _clamp_view_offset(self) -> None:
+        width = max(self.canvas.winfo_width(), 700)
+        height = max(self.canvas.winfo_height(), 600)
+        excess = max(0.0, self.zoom_factor - 1.0)
+        limit_x = width * excess / 2 + 80
+        limit_y = (height - 183) * excess / 2 + 60
+        self.view_offset_x = max(-limit_x, min(limit_x, self.view_offset_x))
+        self.view_offset_y = max(-limit_y, min(limit_y, self.view_offset_y))
+
+    def _reset_view(self, _event=None) -> str:
+        self.zoom_factor = 1.0
+        self.view_offset_x = 0.0
+        self.view_offset_y = 0.0
+        self.draw_scene()
+        self.set_status("View reset to 100%.")
+        return "break"
+
+    def _screen_to_layout(self, x: float, y: float) -> tuple[float, float]:
+        width = max(self.canvas.winfo_width(), 700)
+        height = max(self.canvas.winfo_height(), 600)
+        stage_top = 58
+        stage_bottom = height - 183
+        centre_x = width / 2
+        centre_y = (stage_top + stage_bottom) / 2
+        base_x = centre_x + (x - centre_x - self.view_offset_x) / self.zoom_factor
+        base_y = centre_y + (y - centre_y - self.view_offset_y) / self.zoom_factor
+        return base_x, base_y
 
     # ---------- drawing ----------
 
@@ -228,6 +362,7 @@ class PartySeatPlanner(tk.Tk):
         self.canvas.delete("temporary")
         self.seat_centres.clear()
         self.table_centres.clear()
+        self.table_bounds.clear()
 
         width = max(self.canvas.winfo_width(), 700)
         height = max(self.canvas.winfo_height(), 600)
@@ -235,6 +370,15 @@ class PartySeatPlanner(tk.Tk):
         stage_top = 58
         stage_bottom = height - roster_height - 15
 
+        self.canvas.create_rectangle(
+            0,
+            0,
+            width,
+            43,
+            fill=COLOUR["canvas"],
+            outline="",
+            tags=("scene", "chrome"),
+        )
         self.canvas.create_text(
             26,
             21,
@@ -242,20 +386,28 @@ class PartySeatPlanner(tk.Tk):
             anchor="w",
             fill=COLOUR["muted"],
             font=("Avenir Next", 10, "bold"),
-            tags="scene",
+            tags=("scene", "chrome"),
         )
         self.canvas.create_text(
             width - 26,
             21,
-            text="Drag a table by its centre  •  Drag guests by their seats",
+            text=(
+                "Pinch to zoom  •  Two-finger scroll to pan  •  "
+                f"Double-click table to rename  •  {round(self.zoom_factor * 100)}%"
+            ),
             anchor="e",
             fill="#8993A2",
             font=("Avenir Next", 9),
-            tags="scene",
+            tags=("scene", "chrome"),
         )
-        self.canvas.create_line(24, 42, width - 24, 42, fill="#DEDAD1", tags="scene")
+        self.canvas.create_line(
+            24, 42, width - 24, 42, fill="#DEDAD1", tags=("scene", "chrome")
+        )
 
-        scale = self._layout_scale(width, stage_bottom - stage_top)
+        base_scale = self._layout_scale(width, stage_bottom - stage_top)
+        scale = base_scale * self.zoom_factor
+        viewport_x = width / 2
+        viewport_y = (stage_top + stage_bottom) / 2
         for table_id in range(self.plan.table_count):
             if table_id not in self.plan.table_positions:
                 self.plan.table_positions[table_id] = (
@@ -263,11 +415,14 @@ class PartySeatPlanner(tk.Tk):
                     (table_id + 0.5) / self.plan.table_count,
                 )
             nx, ny = self.plan.table_positions[table_id]
-            cx = 22 + nx * (width - 44)
-            cy = stage_top + ny * (stage_bottom - stage_top)
+            base_x = 22 + nx * (width - 44)
+            base_y = stage_top + ny * (stage_bottom - stage_top)
+            cx = viewport_x + (base_x - viewport_x) * self.zoom_factor + self.view_offset_x
+            cy = viewport_y + (base_y - viewport_y) * self.zoom_factor + self.view_offset_y
             self._draw_table(table_id, cx, cy, scale)
 
         self._draw_roster_zones(width, height)
+        self.canvas.tag_raise("chrome")
         self._update_counts()
 
     def _layout_scale(self, width: float, stage_height: float) -> float:
@@ -275,12 +430,17 @@ class PartySeatPlanner(tk.Tk):
 
     def _draw_table(self, table_id: int, cx: float, cy: float, scale: float) -> None:
         self.table_centres[table_id] = (cx, cy)
-        available_width = max(self.canvas.winfo_width(), 700)
-        table_width = min(790 * scale, available_width - 90)
+        table_width = 790 * scale
         table_height = 46 * scale
         seat_size = 50 * scale
         seat_gap = 11 * scale
         table_tag = f"table:{table_id}"
+        self.table_bounds[table_id] = (
+            cx - table_width / 2,
+            cy - table_height / 2,
+            cx + table_width / 2,
+            cy + table_height / 2,
+        )
 
         self.canvas.create_rectangle(
             cx - table_width / 2 + 4,
@@ -306,7 +466,7 @@ class PartySeatPlanner(tk.Tk):
         self.canvas.create_text(
             cx - 9 * scale,
             cy,
-            text=f"TABLE {table_id + 1}",
+            text=self.plan.table_name(table_id).upper(),
             anchor="e",
             fill=COLOUR["ink"],
             font=("Avenir Next", max(7, round(10 * scale)), "bold"),
@@ -638,10 +798,14 @@ class PartySeatPlanner(tk.Tk):
             width = max(self.canvas.winfo_width(), 1)
             height = max(self.canvas.winfo_height(), 1)
             roster_top = height - 168
+            screen_x = event.x - self.drag_offset[0]
+            screen_y = event.y - self.drag_offset[1]
+            x, y = self._screen_to_layout(screen_x, screen_y)
             scale = self._layout_scale(width, roster_top - 58)
-            table_half = min(395 * scale, (width - 90) / 2)
-            x = min(width - table_half - 24, max(table_half + 24, event.x - self.drag_offset[0]))
-            y = min(roster_top - 66, max(112, event.y - self.drag_offset[1]))
+            table_half = 395 * scale
+            vertical_half = 60 * scale
+            x = min(width - table_half - 24, max(table_half + 24, x))
+            y = min(roster_top - vertical_half - 15, max(58 + vertical_half + 8, y))
             self.plan.table_positions[self.drag_table_id] = (
                 (x - 22) / max(1, width - 44),
                 (y - 58) / max(1, roster_top - 73),
@@ -651,10 +815,10 @@ class PartySeatPlanner(tk.Tk):
 
     def _on_release(self, event) -> None:
         if self.drag_table_id is not None:
-            table_number = self.drag_table_id + 1
+            table_name = self.plan.table_name(self.drag_table_id)
             self.drag_table_id = None
             self.canvas.configure(cursor="arrow")
-            self.set_status(f"Table {table_number} moved.")
+            self.set_status(f"{table_name} moved.")
             return
         if not self.drag_guest_id:
             return
@@ -686,6 +850,9 @@ class PartySeatPlanner(tk.Tk):
     def _on_double_click(self, event) -> None:
         seat_id = self._seat_at_point(event.x, event.y)
         if seat_id is None:
+            table_id = self._table_at_point(event.x, event.y)
+            if table_id is not None:
+                self.rename_table(table_id)
             return
         seat = self.plan.seats[seat_id]
         if seat.locked:
@@ -702,6 +869,26 @@ class PartySeatPlanner(tk.Tk):
         if start:
             target = ((self.bench_rect[0] + self.bench_rect[2]) / 2, self.bench_rect[1] + 55)
             self._animate_name_move(guest.name, start, target)
+
+    def _table_at_point(self, x: float, y: float) -> int | None:
+        for table_id, (x1, y1, x2, y2) in self.table_bounds.items():
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                return table_id
+        return None
+
+    def rename_table(self, table_id: int) -> None:
+        current = self.plan.table_name(table_id)
+        name = simpledialog.askstring(
+            "Rename table",
+            "Table name:",
+            initialvalue=current,
+            parent=self,
+        )
+        if name is None:
+            return
+        renamed = self.plan.rename_table(table_id, name)
+        self.draw_scene()
+        self.set_status(f"Table renamed to “{renamed}”.")
 
     def _on_right_click(self, event) -> None:
         seat_id = self._seat_at_point(event.x, event.y)

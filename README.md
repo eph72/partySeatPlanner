@@ -28,6 +28,11 @@ python3 party_seat_planner.py --guests my_party.txt
 - Drag a guest from the Bench back onto any unlocked seat.
 - Right-click a seat to lock/unlock it. Locked seats have an orange outline.
 - Drag any of the four long tables by its white centre to arrange the room.
+- Pinch with two fingers on a Mac trackpad to zoom around the pointer. Two-finger
+  scrolling pans a zoomed view; `Command+0` resets it. `Command+scroll` is also
+  available as a zoom fallback.
+- Double-click the centre/name of a table to rename it. Custom table names are
+  included in saved plans.
 - **Shuffle seats** preserves all locked seats.
 - **Alternate M / F** uses first-name inference and preserves locked seats. If
   the numbers or locked positions make a perfect pattern impossible, the app

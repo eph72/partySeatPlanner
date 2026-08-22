@@ -115,10 +115,12 @@ class SeatingPlan:
         guests: Iterable[Guest],
         seats: Iterable[Seat],
         table_positions: dict[int, tuple[float, float]] | None = None,
+        table_names: dict[int, str] | None = None,
     ) -> None:
         self.guests = {guest.id: guest for guest in guests}
         self.seats = list(seats)
         self.table_positions = table_positions or {}
+        self.table_names = table_names or {}
 
     @classmethod
     def from_names(
@@ -144,6 +146,18 @@ class SeatingPlan:
     @property
     def table_count(self) -> int:
         return max((seat.table for seat in self.seats), default=-1) + 1
+
+    def table_name(self, table_id: int) -> str:
+        return self.table_names.get(table_id, f"Table {table_id + 1}")
+
+    def rename_table(self, table_id: int, name: str) -> str:
+        if not 0 <= table_id < self.table_count:
+            raise ValueError("Unknown table.")
+        cleaned = " ".join(name.strip().split())[:40]
+        if not cleaned:
+            cleaned = f"Table {table_id + 1}"
+        self.table_names[table_id] = cleaned
+        return cleaned
 
     def guest_for_seat(self, seat_id: int) -> Guest | None:
         guest_id = self.seats[seat_id].guest_id
@@ -313,6 +327,9 @@ class SeatingPlan:
                 str(table): [round(position[0], 2), round(position[1], 2)]
                 for table, position in self.table_positions.items()
             },
+            "table_names": {
+                str(table): name for table, name in self.table_names.items()
+            },
         }
 
     @classmethod
@@ -325,7 +342,10 @@ class SeatingPlan:
             int(table): (float(coords[0]), float(coords[1]))
             for table, coords in data.get("table_positions", {}).items()
         }
-        plan = cls(guests, seats, positions)
+        names = {
+            int(table): str(name) for table, name in data.get("table_names", {}).items()
+        }
+        plan = cls(guests, seats, positions, names)
         valid_ids = set(plan.guests)
         seen = set()
         for seat in plan.seats:

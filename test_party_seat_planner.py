@@ -9,6 +9,7 @@ import tempfile
 import unittest
 
 from generate_test_guests import generate_names
+from party_seat_planner import offset_after_zoom
 from seat_planner_model import SaveManager, SeatingPlan, infer_gender, read_guest_names
 
 
@@ -79,6 +80,20 @@ class SeatingPlanTests(unittest.TestCase):
         self.assertFalse(self.plan.seats[3].locked)
         self.assertIn(guest_id, self.plan.absent_guest_ids())
 
+    def test_table_can_be_renamed(self) -> None:
+        self.assertEqual(self.plan.table_name(1), "Table 2")
+        self.assertEqual(self.plan.rename_table(1, "  Family   & Friends  "), "Family & Friends")
+        self.assertEqual(self.plan.table_name(1), "Family & Friends")
+
+
+class ZoomMathTests(unittest.TestCase):
+    def test_focal_point_stays_fixed_when_zooming(self) -> None:
+        # A point at x=700 maps to base x=700 before zoom.  The new offset
+        # should keep it at x=700 after zooming from 1x to 2x around itself.
+        offset = offset_after_zoom(0, 1, 2, 700, 500)
+        remapped = 500 + (700 - 500) * 2 + offset
+        self.assertAlmostEqual(remapped, 700)
+
 
 class SaveTests(unittest.TestCase):
     def test_round_trip_rename_and_delete(self) -> None:
@@ -86,6 +101,7 @@ class SaveTests(unittest.TestCase):
         plan.toggle_lock(2)
         plan.clear_seat(5)
         plan.table_positions[0] = (0.2, 0.4)
+        plan.rename_table(0, "Top Table")
         with tempfile.TemporaryDirectory() as folder:
             manager = SaveManager(Path(folder) / "saves")
             path = manager.save(plan, "Saturday / final")
@@ -94,6 +110,7 @@ class SaveTests(unittest.TestCase):
             self.assertEqual(loaded.to_dict()["guests"], plan.to_dict()["guests"])
             self.assertEqual(loaded.seats[2].locked, True)
             self.assertEqual(loaded.table_positions[0], (0.2, 0.4))
+            self.assertEqual(loaded.table_name(0), "Top Table")
             renamed = manager.rename(path, "Really final")
             self.assertTrue(renamed.exists())
             manager.delete(renamed)
