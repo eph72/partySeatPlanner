@@ -11,13 +11,21 @@ import unittest
 from generate_test_guests import generate_names
 from party_seat_planner import offset_after_zoom
 from seat_planner_model import (
+    Guest,
     SaveManager,
+    Seat,
     SeatingPlan,
     gender_database_available,
     infer_gender,
     parse_guest_entry,
     read_guest_names,
 )
+
+
+class PythonCompatibilityTests(unittest.TestCase):
+    def test_dataclasses_do_not_require_python_310_slots(self) -> None:
+        self.assertNotIn("__slots__", Guest.__dict__)
+        self.assertNotIn("__slots__", Seat.__dict__)
 
 
 class GenderInferenceTests(unittest.TestCase):

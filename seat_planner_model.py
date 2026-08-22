@@ -155,7 +155,7 @@ def read_guest_names(path: Path) -> list[str]:
     return names
 
 
-@dataclass(slots=True)
+@dataclass
 class Guest:
     id: str
     name: str
@@ -163,7 +163,7 @@ class Guest:
     attending: bool = True
 
 
-@dataclass(slots=True)
+@dataclass
 class Seat:
     id: int
     table: int

@@ -4,6 +4,9 @@ A clean visual desktop planner for four horizontal banquet tables, with 24 seats
 per table (12 along each side). It uses Python's built-in Tkinter plus a small
 offline first-name database for broader gender inference.
 
+Python 3.7 or newer is supported, including the older Python versions commonly
+installed on Intel Macs.
+
 The room has 96 seats in total. If the guest file contains more than 96 people,
 the extras start on the Bench and can be swapped into seats as needed.
 
