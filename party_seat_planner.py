@@ -1193,6 +1193,7 @@ class PartySeatPlanner(tk.Tk):
                 "Getting started",
                 [
                     ("Guest list", "The app starts from guests.txt beside the script. Blank lines and lines beginning with # are ignored."),
+                    ("Double-click launcher", "On macOS, run_party_seat_planner.command prepares and starts the app, hides its Terminal window, then closes that window when the app exits."),
                     ("Status bar", "Watch the message below the room for confirmation, warnings and helpful next steps."),
                 ],
             ),

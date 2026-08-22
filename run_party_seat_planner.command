@@ -5,9 +5,67 @@ set -euo pipefail
 PLANNER_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLANNER_VENV="$PLANNER_DIR/.venv"
 PLANNER_VENV_PYTHON="$PLANNER_VENV/bin/python"
+PLANNER_TERMINAL_TTY=""
+
+if [[ "$(uname -s)" == "Darwin" && "${TERM_PROGRAM:-}" == "Apple_Terminal" ]]; then
+    PLANNER_TERMINAL_TTY="$(tty 2>/dev/null || true)"
+    if [[ "$PLANNER_TERMINAL_TTY" == "not a tty" ]]; then
+        PLANNER_TERMINAL_TTY=""
+    fi
+fi
+
+terminal_window_action() {
+    if [[ -z "$PLANNER_TERMINAL_TTY" ]]; then
+        return
+    fi
+    osascript - "$PLANNER_TERMINAL_TTY" "$1" >/dev/null 2>&1 <<'APPLESCRIPT' || true
+on run arguments
+    set targetTTY to item 1 of arguments
+    set requestedAction to item 2 of arguments
+    tell application "Terminal"
+        repeat with terminalWindow in windows
+            repeat with terminalTab in tabs of terminalWindow
+                if (tty of terminalTab) is targetTTY then
+                    if requestedAction is "hide" then
+                        set miniaturized of terminalWindow to true
+                    else if requestedAction is "show" then
+                        set miniaturized of terminalWindow to false
+                        activate
+                    end if
+                    return
+                end if
+            end repeat
+        end repeat
+    end tell
+end run
+APPLESCRIPT
+}
+
+schedule_terminal_close() {
+    if [[ -z "$PLANNER_TERMINAL_TTY" ]]; then
+        return
+    fi
+    nohup osascript - "$PLANNER_TERMINAL_TTY" >/dev/null 2>&1 <<'APPLESCRIPT' &
+on run arguments
+    set targetTTY to item 1 of arguments
+    delay 0.4
+    tell application "Terminal"
+        repeat with terminalWindow in windows
+            repeat with terminalTab in tabs of terminalWindow
+                if (tty of terminalTab) is targetTTY then
+                    close terminalWindow
+                    return
+                end if
+            end repeat
+        end repeat
+    end tell
+end run
+APPLESCRIPT
+}
 
 pause_after_error() {
     PLANNER_STATUS=$?
+    terminal_window_action show
     echo
     echo "Party Seat Planner could not start. Review the message above."
     read -r -p "Press Return to close this window..." || true
@@ -52,4 +110,7 @@ if ! "$PLANNER_VENV_PYTHON" -c 'import gender_guesser.detector, reportlab' >/dev
 fi
 
 echo "Starting Party Seat Planner..."
+terminal_window_action hide
 "$PLANNER_VENV_PYTHON" "$PLANNER_DIR/party_seat_planner.py"
+schedule_terminal_close
+exit 0

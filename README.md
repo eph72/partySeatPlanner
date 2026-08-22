@@ -92,7 +92,9 @@ start command. The virtual environment only needs to be created once.
 After cloning, you can instead double-click `run_party_seat_planner.command` in
 Finder. On its first launch it finds a compatible Python, creates `.venv`,
 installs the offline name database and PDF exporter, then starts the app. Later
-launches start the app immediately.
+launches start the app immediately. The launcher minimises its own Terminal
+window while the planner is open and closes that window when the planner exits.
+If startup fails, the Terminal window is restored so you can read the error.
 
 If macOS asks for confirmation the first time, right-click the file, choose
 **Open**, then confirm **Open**.
