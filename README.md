@@ -20,6 +20,7 @@ total. Extra guests wait on the Bench until a seat becomes available.
 - Pinch to zoom on supported Mac trackpads, with keyboard and scroll fallbacks.
 - Save, load, rename and delete seating plans from inside the app.
 - Export a monochrome seating plan and alphabetical guest directory as PDFs.
+- Open a complete in-app guide from the **Help** button.
 
 ## Requirements
 
@@ -187,6 +188,7 @@ Bench and can be swapped into the plan by dragging.
 | Add or rename a guest | Use **Add guest** or **Rename** in **Edit guests** |
 | Change table shape or capacity | Click **Edit layout** |
 | Export both PDFs | Click **Export PDFs**, name the export and choose a folder |
+| Open the complete controls guide | Click **Help** |
 | Zoom on a Mac trackpad | Pinch with two fingers |
 | Zoom fallback on macOS | Command+scroll or Command+plus/minus |
 | Reset the view on macOS | Command+0 |

@@ -180,6 +180,7 @@ class PartySeatPlanner(tk.Tk):
         self._sidebar_button("Edit guests", self.open_guest_editor, COLOUR["navy_2"], "#2C4264")
         self._sidebar_button("Edit layout", self.open_layout_editor, COLOUR["navy_2"], "#2C4264")
         self._sidebar_button("Export PDFs", self.export_pdfs, COLOUR["navy_2"], "#2C4264")
+        self._sidebar_button("Help", self.open_help, COLOUR["navy_2"], "#2C4264")
 
         tk.Frame(self.sidebar, height=1, bg="#33435C").pack(fill="x", padx=22, pady=16)
 
@@ -1090,6 +1091,169 @@ class PartySeatPlanner(tk.Tk):
         self.draw_scene()
         self._animate_shuffle()
         self.set_status(message)
+
+    def open_help(self) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.title("Party Seat Planner help")
+        dialog.geometry("700x720")
+        dialog.minsize(560, 520)
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.configure(bg=COLOUR["paper"])
+
+        tk.Label(
+            dialog,
+            text="Help & controls",
+            bg=COLOUR["paper"],
+            fg=COLOUR["ink"],
+            font=("Avenir Next", 22, "bold"),
+        ).pack(anchor="w", padx=28, pady=(24, 2))
+        tk.Label(
+            dialog,
+            text="Everything you can do in Party Seat Planner.",
+            bg=COLOUR["paper"],
+            fg=COLOUR["muted"],
+            font=("Avenir Next", 10),
+        ).pack(anchor="w", padx=29, pady=(0, 14))
+
+        text_shell = tk.Frame(
+            dialog,
+            bg="white",
+            highlightbackground=COLOUR["line"],
+            highlightthickness=1,
+        )
+        text_shell.pack(fill="both", expand=True, padx=28)
+        guide = tk.Text(
+            text_shell,
+            wrap="word",
+            bg="white",
+            fg=COLOUR["ink"],
+            bd=0,
+            highlightthickness=0,
+            padx=20,
+            pady=16,
+            spacing1=2,
+            spacing3=5,
+            cursor="arrow",
+            font=("Avenir Next", 10),
+        )
+        scrollbar = tk.Scrollbar(text_shell, orient="vertical", command=guide.yview)
+        guide.configure(yscrollcommand=scrollbar.set)
+        guide.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        guide.tag_configure(
+            "section",
+            foreground=COLOUR["navy"],
+            font=("Avenir Next", 13, "bold"),
+            spacing1=12,
+            spacing3=5,
+        )
+        guide.tag_configure(
+            "control",
+            foreground=COLOUR["blue"],
+            font=("Avenir Next", 10, "bold"),
+        )
+        guide.tag_configure("body", lmargin2=15)
+
+        sections = [
+            (
+                "Getting started",
+                [
+                    ("Guest list", "The app starts from guests.txt beside the script. Blank lines and lines beginning with # are ignored."),
+                    ("Status bar", "Watch the message below the room for confirmation, warnings and helpful next steps."),
+                ],
+            ),
+            (
+                "Moving and clearing guests",
+                [
+                    ("Drag a guest", "Drop a name onto an unlocked seat. If both seats are occupied, the guests swap places."),
+                    ("Use the Bench", "Double-click a seat or drag its guest into the Bench. Drag a benched name onto an unlocked seat to reseat them."),
+                    ("Empty seats", "A cleared seat remains available until a guest is dragged onto it or a shuffle fills it."),
+                ],
+            ),
+            (
+                "Locking seats",
+                [
+                    ("Right-click", "Right-click a seat to lock or unlock it. Locked seats have an orange outline and padlock."),
+                    ("What locking protects", "A locked guest cannot be dragged, cleared, swapped or changed by either shuffle option."),
+                ],
+            ),
+            (
+                "Shuffling",
+                [
+                    ("Shuffle seats", "Randomises every unlocked attending guest while leaving locked seats untouched."),
+                    ("Alternate M / F", "Builds the closest possible alternating M/F pattern. The status bar reports any unavoidable exceptions."),
+                ],
+            ),
+            (
+                "Editing guests",
+                [
+                    ("Edit guests", "Open the alphabetical guest list to change attendance or correct the inferred M/F category."),
+                    ("Check all / Uncheck all", "Mark everyone as attending or not attending in one action."),
+                    ("Add guest", "Add a new person; attending additions wait on the Bench until seated."),
+                    ("Rename", "Change a guest's displayed name without losing their seat assignment."),
+                    ("Not attending", "Unchecked guests are removed from seats and shown in the grey not-attending area."),
+                ],
+            ),
+            (
+                "Tables and room layout",
+                [
+                    ("Move a table", "Drag its white centre on the room canvas. Its position is included when you save the plan."),
+                    ("Rename a table", "Double-click the white centre or table name."),
+                    ("Edit layout", "Choose rectangular or round tables and set between 2 and 30 side/round seats."),
+                    ("End chairs", "For a rectangular table, End chairs adds one extra chair at each end."),
+                    ("Reducing capacity", "The app asks before moving displaced guests to the Bench."),
+                ],
+            ),
+            (
+                "Zooming and panning",
+                [
+                    ("Mac trackpad", "Pinch to zoom and use two-finger scrolling to pan. Hold Shift while scrolling for horizontal movement."),
+                    ("Keyboard fallback", "Use Command+plus or Command+minus to zoom, and Command+0 to reset the view."),
+                    ("Command+scroll", "Also zooms around the pointer on macOS."),
+                ],
+            ),
+            (
+                "Saving plans",
+                [
+                    ("+ Save", "Stores guest attendance, seats, locks, table names, shapes, capacities and positions."),
+                    ("Saved-plan buttons", "Click a saved plan in the sidebar to load, rename or delete it."),
+                    ("Files", "Saved plans are JSON files inside the saves folder and can be backed up or copied to another computer."),
+                ],
+            ),
+            (
+                "PDF exports",
+                [
+                    ("Export PDFs", "Creates a monochrome A3 seating plan and an alphabetical A4 table-assignment list."),
+                    ("Privacy and clarity", "Exports omit gender colours, lock information, benched guests and guests marked not attending."),
+                    ("Existing exports", "New exports are numbered automatically instead of overwriting earlier files."),
+                ],
+            ),
+        ]
+        for heading, items in sections:
+            guide.insert("end", f"{heading}\n", "section")
+            for control, description in items:
+                guide.insert("end", f"{control}: ", "control")
+                guide.insert("end", f"{description}\n", "body")
+        guide.configure(state="disabled")
+
+        footer = tk.Frame(dialog, bg=COLOUR["paper"])
+        footer.pack(fill="x", padx=28, pady=20)
+        close = tk.Label(
+            footer,
+            text="Close",
+            bg=COLOUR["green"],
+            fg="white",
+            cursor="hand2",
+            font=("Avenir Next", 10, "bold"),
+            padx=22,
+            pady=9,
+        )
+        close.pack(side="right")
+        close.bind("<Button-1>", lambda _event: dialog.destroy())
+        close.bind("<Enter>", lambda _event: close.configure(bg=COLOUR["green_hover"]))
+        close.bind("<Leave>", lambda _event: close.configure(bg=COLOUR["green"]))
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
 
     def open_layout_editor(self) -> None:
         editor = tk.Toplevel(self)
