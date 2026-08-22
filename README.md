@@ -19,6 +19,7 @@ total. Extra guests wait on the Bench until a seat becomes available.
 - Add one chair at each end of any rectangular table.
 - Pinch to zoom on supported Mac trackpads, with keyboard and scroll fallbacks.
 - Save, load, rename and delete seating plans from inside the app.
+- Reopen the most recently saved plan automatically at startup.
 - Export a monochrome seating plan and alphabetical guest directory as PDFs.
 - Open a complete in-app guide from the **Help** button.
 
@@ -203,7 +204,9 @@ exceptions.
 
 Click **+ Save** in the sidebar and name the plan. Saves are readable JSON files
 inside the automatically created `saves` folder. Each saved-plan button provides
-options to load, rename or delete it.
+options to load, rename or delete it. When the app starts, it automatically
+opens the most recent readable save; if that file is damaged, it safely tries
+the next newest save.
 
 A save includes:
 

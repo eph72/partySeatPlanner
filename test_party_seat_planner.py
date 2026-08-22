@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import random
 import tempfile
 import unittest
 
 from generate_test_guests import generate_names
-from party_seat_planner import offset_after_zoom, runtime_compatibility_issue
+from party_seat_planner import (
+    load_most_recent_plan,
+    offset_after_zoom,
+    runtime_compatibility_issue,
+)
 from pdf_exports import _guest_assignment, _seated_guests, export_pdf_bundle
 from seat_planner_model import (
     Guest,
@@ -185,6 +190,25 @@ class ZoomMathTests(unittest.TestCase):
 
 
 class SaveTests(unittest.TestCase):
+    def test_most_recent_readable_save_is_opened_at_startup(self) -> None:
+        default = SeatingPlan.from_names(["Alice Baker"])
+        older = SeatingPlan.from_names(["Ben Cooper"])
+        newest = SeatingPlan.from_names(["Chloe Davis"])
+        with tempfile.TemporaryDirectory() as folder:
+            manager = SaveManager(Path(folder))
+            older_path = manager.save(older, "Older")
+            newest_path = manager.save(newest, "Newest")
+            broken_path = Path(folder) / "Broken.json"
+            broken_path.write_text("not valid JSON", encoding="utf-8")
+            os.utime(older_path, (1, 1))
+            os.utime(newest_path, (2, 2))
+            os.utime(broken_path, (3, 3))
+
+            loaded, selected_path, warning = load_most_recent_plan(default, manager)
+            self.assertEqual(next(iter(loaded.guests.values())).name, "Chloe Davis")
+            self.assertEqual(selected_path, newest_path)
+            self.assertIn("Broken", warning)
+
     def test_round_trip_rename_and_delete(self) -> None:
         plan = SeatingPlan.from_names(generate_names(20, seed=11))
         plan.toggle_lock(2)

@@ -91,6 +91,29 @@ def runtime_compatibility_issue(
     return None
 
 
+def load_most_recent_plan(
+    default_plan: SeatingPlan,
+    save_manager: SaveManager,
+) -> tuple[SeatingPlan, Path | None, str | None]:
+    """Load the newest readable save, falling back safely when needed."""
+
+    unreadable: list[str] = []
+    for path in save_manager.list_saves():
+        try:
+            plan = save_manager.load(path)
+        except (OSError, ValueError, KeyError, TypeError):
+            unreadable.append(path.stem)
+            continue
+        warning = None
+        if unreadable:
+            warning = f"Skipped unreadable save{'s' if len(unreadable) != 1 else ''}: {', '.join(unreadable)}."
+        return plan, path, warning
+    warning = None
+    if unreadable:
+        warning = "No saved plan could be opened; started from the guest list instead."
+    return default_plan, None, warning
+
+
 class PartySeatPlanner(tk.Tk):
     """Main application window and Canvas-based interaction layer."""
 
@@ -101,9 +124,12 @@ class PartySeatPlanner(tk.Tk):
         enable_native_pinch: bool = True,
     ) -> None:
         super().__init__()
-        self.plan = plan
         self.guest_file = guest_file
         self.save_manager = SaveManager(APP_DIR / "saves")
+        self.plan, startup_save, startup_warning = load_most_recent_plan(
+            plan,
+            self.save_manager,
+        )
 
         self.title("Party Seat Planner")
         self.geometry("1500x940")
@@ -132,6 +158,13 @@ class PartySeatPlanner(tk.Tk):
         self._bind_canvas()
         self.after(80, self.draw_scene)
         self.after(120, self.refresh_saves)
+        if startup_save:
+            startup_message = f"Opened most recent save “{startup_save.stem}”."
+            if startup_warning:
+                startup_message = f"{startup_message} {startup_warning}"
+            self.after(260, lambda message=startup_message: self.set_status(message))
+        elif startup_warning:
+            self.after(260, lambda message=startup_warning: self.set_status(message))
         if enable_native_pinch:
             self.after(180, self._enable_native_pinch)
         else:
