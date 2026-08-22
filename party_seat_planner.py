@@ -1321,8 +1321,33 @@ def main() -> None:
         print(f"Party Seat Planner: {error}")
         raise SystemExit(1) from error
     if args.smoke_test:
-        app.after(700, app.destroy)
+        app._smoke_failed = False
+
+        def exercise_native_bridge() -> None:
+            bridge = app._pinch_bridge
+            if not bridge or not bridge.available:
+                detail = bridge.error if bridge else "bridge did not initialise"
+                print(f"Native pinch smoke test failed: {detail}")
+                app._smoke_failed = True
+                app.after(50, verify_native_bridge)
+                return
+            if not bridge.emit_test_pinch(0.12):
+                print("Native pinch smoke test failed: event was not queued")
+                app._smoke_failed = True
+            app.after(350, verify_native_bridge)
+
+        def verify_native_bridge() -> None:
+            if app.zoom_factor <= 1.05:
+                print("Native pinch smoke test failed: zoom callback was not delivered")
+                app._smoke_failed = True
+            elif not app._smoke_failed:
+                print(f"Native pinch smoke test passed at {round(app.zoom_factor * 100)}% zoom")
+            app.destroy()
+
+        app.after(300, exercise_native_bridge)
     app.mainloop()
+    if args.smoke_test and app._smoke_failed:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

@@ -53,4 +53,10 @@ This replaces `guests.txt`. To write elsewhere, add `--output another.txt`.
 
 ```bash
 python3 -m unittest -v
+python3 party_seat_planner.py --smoke-test
 ```
+
+The smoke test builds the small native macOS pinch helper, sends a synthetic
+magnification through the same pipe used by the trackpad, verifies that zoom
+changes, and exits. If native support is unavailable, the app remains usable
+with `Command+scroll` or `Command+plus/minus`.
