@@ -1,84 +1,271 @@
 # Party Seat Planner
 
-A clean visual desktop planner for four horizontal banquet tables, with 24 seats
-per table (12 along each side). It uses Python's built-in Tkinter plus a small
-offline first-name database for broader gender inference.
+A visual desktop seating planner for parties and wedding receptions. It displays
+four horizontal banquet tables with 24 seats each, giving 96 seats in total.
+Extra guests wait on the Bench until a seat becomes available.
 
-Python 3.8 or newer with Tk 8.6+ is supported. On macOS, use a current
-[python.org macOS installer](https://www.python.org/downloads/macos/) rather than
-Apple's older `/usr/bin/python3`, which can contain Tk 8.5 and crash while
-opening a window.
+## Features
 
-The room has 96 seats in total. If the guest file contains more than 96 people,
-the extras start on the Bench and can be swapped into seats as needed.
+- Drag guests between seats; occupied seats swap automatically.
+- Lock a seat with right-click so shuffling cannot change it.
+- Shuffle every unlocked guest or create an alternating M/F arrangement.
+- Shade the whole seat by its inferred M/F seating category.
+- Clear guests to a Bench and drag them back when ready.
+- Mark guests as not attending in an alphabetical guest editor.
+- Correct an inferred M/F value in the editor or directly in the guest file.
+- Drag, rename and arrange all four tables.
+- Pinch to zoom on supported Mac trackpads, with keyboard and scroll fallbacks.
+- Save, load, rename and delete seating plans from inside the app.
 
-## Start it
+## Requirements
+
+- Python 3.8 or newer.
+- Tk 8.6 or newer.
+- Git, if cloning or updating the project from GitHub.
+- macOS, Windows or Linux. Native trackpad pinch support is macOS-only.
+
+Python 3.13 is the recommended and tested version. On macOS, do not use
+Apple's `/usr/bin/python3`: it can contain Tk 8.5, which may crash while opening
+the first window.
+
+## Install on macOS
+
+### 1. Install Git
+
+Open Terminal and install Apple's Command Line Tools:
 
 ```bash
-python3 -m pip install -r requirements.txt
-python3 party_seat_planner.py
+xcode-select --install
 ```
 
-If a particular Mac has trouble with native trackpad gestures, safe mode keeps
-keyboard and Command+scroll zoom while disabling the native pinch bridge:
+If the tools are already installed, macOS will say so. Confirm Git is available:
 
 ```bash
-python3 party_seat_planner.py --no-native-pinch
+git --version
 ```
 
-The included `guests.txt` contains 100 sample people. Replace it with your real
-list (one full name per line) and start the app again. Names are inferred with UK
-weighting and never sent online. For an ambiguous name, add `| M` or `| F`:
+Homebrew users can install Git with `brew install git` instead. See the
+[official Git installation choices for macOS](https://git-scm.com/install/mac).
+
+### 2. Install a current Python
+
+Download and run a Python 3.13 universal installer from the
+[official Python macOS downloads page](https://www.python.org/downloads/macos/),
+then close and reopen Terminal.
+
+Check that Python and Tk are the correct versions:
+
+```bash
+python3.13 --version
+python3.13 -c "import tkinter; print('Tk', tkinter.TkVersion)"
+```
+
+The second command must report Tk 8.6 or newer.
+
+### 3. Clone and install the app
+
+```bash
+cd ~/Documents
+git clone https://github.com/eph72/partySeatPlanner.git
+cd partySeatPlanner
+python3.13 -m venv .venv
+./.venv/bin/python -m pip install -r requirements.txt
+```
+
+### 4. Start the app
+
+```bash
+./.venv/bin/python party_seat_planner.py
+```
+
+For later launches, open Terminal, return to the project folder and run the same
+start command. The virtual environment only needs to be created once.
+
+## Install on Windows
+
+1. Install [Git for Windows](https://git-scm.com/install/windows).
+2. Install Python 3.13 from the
+   [official Python Windows downloads page](https://www.python.org/downloads/windows/).
+3. Open PowerShell and run:
+
+```powershell
+cd $HOME\Documents
+git clone https://github.com/eph72/partySeatPlanner.git
+cd partySeatPlanner
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe party_seat_planner.py
+```
+
+Using the virtual environment's Python directly avoids PowerShell activation-policy
+issues.
+
+## Install on Debian or Ubuntu Linux
+
+Install Git, Python, Tk and virtual-environment support:
+
+```bash
+sudo apt update
+sudo apt install git python3 python3-pip python3-tk python3-venv
+```
+
+Then clone and start the app:
+
+```bash
+cd ~/Documents
+git clone https://github.com/eph72/partySeatPlanner.git
+cd partySeatPlanner
+python3 -m venv .venv
+./.venv/bin/python -m pip install -r requirements.txt
+./.venv/bin/python party_seat_planner.py
+```
+
+Other distributions can use the appropriate command from the
+[official Git Linux installation page](https://git-scm.com/install/linux).
+
+## Using your guest list
+
+Edit `guests.txt` and enter one full name per line:
+
+```text
+Alice Hodges
+Jude Rothwell
+Lydia Brassil
+```
+
+Blank lines and lines beginning with `#` are ignored. You can also keep another
+file and select it when launching:
+
+```bash
+./.venv/bin/python party_seat_planner.py --guests my_party.txt
+```
+
+The app infers an M/F seating category from each first name using an offline name
+database with UK weighting. Nothing is uploaded. Name-based inference cannot be
+perfect, so ambiguous names can be set explicitly:
 
 ```text
 Alex Morgan | F
 Sam Taylor | M
 ```
 
-A different text file can
-also be selected at launch:
+You can also change M/F beside a person in **Edit guests**. Editor corrections
+are retained in saved seating plans; add `| M` or `| F` to the text file if the
+correction should also apply whenever a completely new plan is started.
 
-```bash
-python3 party_seat_planner.py --guests my_party.txt
-```
+The first 96 guests are initially seated. Any additional guests start on the
+Bench and can be swapped into the plan by dragging.
 
 ## Controls
 
-- Drag a guest from one seat to another. Occupied seats swap guests.
-- Drag a guest to the grey Bench, or double-click their seat to clear it.
-- Drag a guest from the Bench back onto any unlocked seat.
-- Right-click a seat to lock/unlock it. Locked seats have an orange outline.
-- Drag any of the four long tables by its white centre to arrange the room.
-- Pinch with two fingers on a Mac trackpad to zoom around the pointer. Two-finger
-  scrolling pans a zoomed view; `Command+0` resets it. `Command+scroll` is also
-  available as a zoom fallback.
-- Double-click the centre/name of a table to rename it. Custom table names are
-  included in saved plans.
-- **Shuffle seats** preserves all locked seats.
-- **Alternate M / F** uses first-name inference and preserves locked seats. If
-  the numbers or locked positions make a perfect pattern impossible, the app
-  reports how many exceptions were needed.
-- **Edit guests** marks absentees and lets you correct any inferred M/F value;
-  absentees appear in the grey Not Attending box.
-- Saved plans are readable JSON files in the automatically created `saves`
-  folder. Click a saved plan to load, rename, or delete it.
+| Action | Control |
+| --- | --- |
+| Move or swap a guest | Drag one name onto another unlocked seat |
+| Move a guest to the Bench | Double-click the seat, or drag it to the Bench |
+| Reseat a benched guest | Drag their name from the Bench onto a seat |
+| Lock or unlock a seat | Right-click the seat |
+| Move a table | Drag its white centre |
+| Rename a table | Double-click its centre or name |
+| Shuffle unlocked guests | Click **Shuffle seats** |
+| Alternate M/F seating | Click **Alternate M / F** |
+| Change attendance or M/F | Click **Edit guests** |
+| Zoom on a Mac trackpad | Pinch with two fingers |
+| Zoom fallback on macOS | Command+scroll or Command+plus/minus |
+| Reset the view on macOS | Command+0 |
+| Pan a zoomed view | Two-finger scroll; hold Shift for horizontal movement |
 
-## Generate another test list
+Locked seats have an orange outline and padlock. Shuffle operations never move,
+clear or replace a locked guest. If the guest balance or locked positions make a
+perfect alternating pattern impossible, the status bar reports the number of
+exceptions.
+
+## Saved plans
+
+Click **+ Save** in the sidebar and name the plan. Saves are readable JSON files
+inside the automatically created `saves` folder. Each saved-plan button provides
+options to load, rename or delete it.
+
+A save includes:
+
+- guest attendance and corrected M/F values;
+- seat assignments and locks;
+- table positions and custom table names.
+
+## Updating an existing installation
+
+From inside the project folder:
 
 ```bash
-python3 generate_test_guests.py --count 100 --seed 2026
+git pull
+./.venv/bin/python -m pip install -r requirements.txt
+./.venv/bin/python party_seat_planner.py
 ```
 
-This replaces `guests.txt`. To write elsewhere, add `--output another.txt`.
+On Windows, replace `./.venv/bin/python` with
+`.\.venv\Scripts\python.exe`.
+
+## Troubleshooting
+
+### `Segmentation fault` or Tk 8.5 on macOS
+
+Check the Tk version used by the selected Python:
+
+```bash
+python3 -c "import tkinter; print('Tk', tkinter.TkVersion)"
+```
+
+If it reports 8.5, install Python 3.13 from python.org and use `python3.13` to
+create the virtual environment as shown above. The app now detects Tk 8.5 before
+window creation and exits with a readable message instead of allowing the known
+crash path.
+
+### Pinch zoom causes a machine-specific problem
+
+Disable only the native gesture bridge. Keyboard and Command+scroll zoom remain:
+
+```bash
+./.venv/bin/python party_seat_planner.py --no-native-pinch
+```
+
+### `No module named gender_guesser`
+
+Install the requirements using the same Python that starts the app:
+
+```bash
+./.venv/bin/python -m pip install -r requirements.txt
+```
+
+### The wrong guest file opens
+
+Specify the file explicitly:
+
+```bash
+./.venv/bin/python party_seat_planner.py --guests /path/to/guests.txt
+```
+
+## Generate test guests
+
+The repository includes a 100-person sample list. To replace it with another
+repeatable test list:
+
+```bash
+./.venv/bin/python generate_test_guests.py --count 100 --seed 2026
+```
+
+To preserve `guests.txt`, choose another output file:
+
+```bash
+./.venv/bin/python generate_test_guests.py --count 100 --output test_guests.txt
+```
 
 ## Run the automated checks
 
 ```bash
-python3 -m unittest -v
-python3 party_seat_planner.py --smoke-test
+./.venv/bin/python -m unittest -v
+./.venv/bin/python party_seat_planner.py --smoke-test
 ```
 
-The smoke test builds the small native macOS pinch helper, sends a synthetic
-magnification through the same pipe used by the trackpad, verifies that zoom
-changes, and exits. If native support is unavailable, the app remains usable
-with `Command+scroll` or `Command+plus/minus`.
+The unit suite checks seating, locking, shuffling, name inference, saves, table
+names, zoom calculations and legacy-Python compatibility. On macOS, the smoke
+test also builds the small native pinch helper, sends a synthetic magnification
+event through it and verifies that zoom changes.
