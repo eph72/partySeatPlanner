@@ -1139,18 +1139,6 @@ class PartySeatPlanner(tk.Tk):
             wraplength=570,
         ).pack(anchor="w", padx=27, pady=(0, 14))
 
-        list_shell = tk.Frame(editor, bg="#F3F4F6", highlightbackground=COLOUR["line"], highlightthickness=1)
-        list_shell.pack(fill="both", expand=True, padx=26)
-        guest_canvas = tk.Canvas(list_shell, bg="#F3F4F6", highlightthickness=0, bd=0)
-        scrollbar = tk.Scrollbar(list_shell, orient="vertical", command=guest_canvas.yview)
-        inner = tk.Frame(guest_canvas, bg="#F3F4F6")
-        window = guest_canvas.create_window((0, 0), window=inner, anchor="nw")
-        guest_canvas.configure(yscrollcommand=scrollbar.set)
-        guest_canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        inner.bind("<Configure>", lambda _e: guest_canvas.configure(scrollregion=guest_canvas.bbox("all")))
-        guest_canvas.bind("<Configure>", lambda e: guest_canvas.itemconfigure(window, width=e.width))
-
         attendance_variables: dict[str, tk.BooleanVar] = {}
         gender_variables: dict[str, tk.StringVar] = {}
         rows: dict[str, tk.Frame] = {}
@@ -1174,6 +1162,38 @@ class PartySeatPlanner(tk.Tk):
                     bg=background,
                     activebackground=background,
                 )
+
+        def set_all_attendance(attending: bool) -> None:
+            for guest_id, variable in attendance_variables.items():
+                variable.set(attending)
+                restyle(guest_id)
+
+        bulk_controls = tk.Frame(editor, bg=COLOUR["paper"])
+        bulk_controls.pack(fill="x", padx=21, pady=(0, 10))
+        self._dialog_button(
+            bulk_controls,
+            "Check all",
+            lambda: set_all_attendance(True),
+            COLOUR["green"],
+        )
+        self._dialog_button(
+            bulk_controls,
+            "Uncheck all",
+            lambda: set_all_attendance(False),
+            COLOUR["navy_2"],
+        )
+
+        list_shell = tk.Frame(editor, bg="#F3F4F6", highlightbackground=COLOUR["line"], highlightthickness=1)
+        list_shell.pack(fill="both", expand=True, padx=26)
+        guest_canvas = tk.Canvas(list_shell, bg="#F3F4F6", highlightthickness=0, bd=0)
+        scrollbar = tk.Scrollbar(list_shell, orient="vertical", command=guest_canvas.yview)
+        inner = tk.Frame(guest_canvas, bg="#F3F4F6")
+        window = guest_canvas.create_window((0, 0), window=inner, anchor="nw")
+        guest_canvas.configure(yscrollcommand=scrollbar.set)
+        guest_canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        inner.bind("<Configure>", lambda _e: guest_canvas.configure(scrollregion=guest_canvas.bbox("all")))
+        guest_canvas.bind("<Configure>", lambda e: guest_canvas.itemconfigure(window, width=e.width))
 
         for guest in sorted(self.plan.guests.values(), key=lambda item: (item.name.lower(), item.id)):
             attendance = tk.BooleanVar(value=guest.attending)

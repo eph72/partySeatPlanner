@@ -169,6 +169,7 @@ Bench and can be swapped into the plan by dragging.
 | Shuffle unlocked guests | Click **Shuffle seats** |
 | Alternate M/F seating | Click **Alternate M / F** |
 | Change attendance or M/F | Click **Edit guests** |
+| Change everyone at once | Click **Check all** or **Uncheck all** in **Edit guests** |
 | Zoom on a Mac trackpad | Pinch with two fingers |
 | Zoom fallback on macOS | Command+scroll or Command+plus/minus |
 | Reset the view on macOS | Command+0 |
