@@ -120,34 +120,34 @@ def export_seating_plan(plan: SeatingPlan, output_path: Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     page_width, page_height = landscape(A3)
     pdf = canvas.Canvas(str(output_path), pagesize=(page_width, page_height))
-    pdf.setTitle("Party Seating Plan")
-    pdf.setAuthor("Party Seat Planner")
+    pdf.setTitle("")
+    pdf.setAuthor("")
 
     margin = 15 * mm
-    pdf.setFillColor(colors.black)
-    pdf.setFont(FONT_BOLD, 20)
-    pdf.drawString(margin, page_height - 18 * mm, "Party Seating Plan")
-    pdf.setFont(FONT_REGULAR, 8)
-    pdf.drawRightString(
-        page_width - margin,
-        page_height - 17 * mm,
-        datetime.now().astimezone().strftime("Generated %d %B %Y, %H:%M"),
-    )
-    pdf.setStrokeColor(colors.HexColor("#777777"))
-    pdf.setLineWidth(0.6)
-    pdf.line(margin, page_height - 22 * mm, page_width - margin, page_height - 22 * mm)
-
     stage_top = page_height - 31 * mm
     stage_bottom = 23 * mm
     table_count = max(1, plan.table_count)
-    block_height = (stage_top - stage_bottom) / table_count
+    block_height = stage_top - stage_bottom
     usable_width = page_width - 2 * margin
     gap = 2.1 * mm
     seat_height = min(11 * mm, block_height * 0.27)
     table_height = min(13 * mm, block_height * 0.25)
 
     for table_id in range(table_count):
-        centre_y = stage_top - (table_id + 0.5) * block_height
+        pdf.setFillColor(colors.black)
+        pdf.setFont(FONT_BOLD, 20)
+        pdf.drawString(margin, page_height - 18 * mm, "")
+        pdf.setFont(FONT_REGULAR, 8)
+        pdf.drawRightString(
+            page_width - margin,
+            page_height - 17 * mm,
+            datetime.now().astimezone().strftime(""),
+        )
+        pdf.setStrokeColor(colors.HexColor("#777777"))
+        pdf.setLineWidth(0.6)
+        pdf.line(margin, page_height - 22 * mm, page_width - margin, page_height - 22 * mm)
+
+        centre_y = (stage_top + stage_bottom) / 2
         layout = plan.table_layout(table_id)
         seats_by_position = {
             seat.position: seat for seat in plan.seats if seat.table == table_id
@@ -244,12 +244,15 @@ def export_seating_plan(plan: SeatingPlan, output_path: Path) -> Path:
                     seat_height,
                 )
 
-    seated = sum(seat.guest_id is not None for seat in plan.seats)
-    pdf.setFillColor(colors.black)
-    pdf.setFont(FONT_REGULAR, 8)
-    pdf.drawString(margin, 12 * mm, f"Seated guests: {seated}")
-    pdf.drawRightString(page_width - margin, 12 * mm, "No colours or lock information shown")
-    pdf.showPage()
+        seated = sum(
+            seat.guest_id is not None and seat.table == table_id
+            for seat in plan.seats
+        )
+        pdf.setFillColor(colors.black)
+        pdf.setFont(FONT_REGULAR, 8)
+        pdf.drawString(margin, 12 * mm, f"Seated guests: {seated}")
+        pdf.drawRightString(page_width - margin, 12 * mm, "")
+        pdf.showPage()
     pdf.save()
     return output_path
 
@@ -283,7 +286,7 @@ def export_guest_directory(plan: SeatingPlan, output_path: Path) -> Path:
         leftMargin=16 * mm,
         topMargin=18 * mm,
         bottomMargin=17 * mm,
-        title="Alphabetical Guest List",
+        title="Guest List",
         author="Party Seat Planner",
     )
     styles = getSampleStyleSheet()
@@ -314,7 +317,7 @@ def export_guest_directory(plan: SeatingPlan, output_path: Path) -> Path:
 
     seated_guests = _seated_guests(plan)
     story = [
-        Paragraph("Alphabetical Guest List", title_style),
+        Paragraph("Guest List", title_style),
         Paragraph(
             f"{len(seated_guests)} seated guests",
             body_style,
