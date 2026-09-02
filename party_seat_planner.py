@@ -1258,7 +1258,7 @@ class PartySeatPlanner(tk.Tk):
             (
                 "PDF exports",
                 [
-                    ("Export PDFs", "Creates a monochrome A3 seating plan and an alphabetical A4 table-assignment list."),
+                    ("Export PDFs", "Creates one large monochrome A3 page per table and a clean four-column A4 guest list sorted by surname."),
                     ("Privacy and clarity", "Exports omit gender colours, lock information, benched guests and guests marked not attending."),
                     ("Existing exports", "New exports are numbered automatically instead of overwriting earlier files."),
                 ],

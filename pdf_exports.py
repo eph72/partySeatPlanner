@@ -2,22 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import math
 from pathlib import Path
 import re
-from xml.sax.saxutils import escape
 
 from reportlab import __file__ as reportlab_file
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A3, A4, landscape
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from seat_planner_model import SeatingPlan
 
@@ -105,7 +100,7 @@ def _draw_export_seat(
     first_baseline = y + seat_height / 2 + (line_height * (len(lines) - 1) / 2) - 2.4
     pdf.setFillColor(colors.black)
     for line_index, line in enumerate(lines):
-        fitted, font_size = _fit_line(pdf, line, seat_width - 3 * mm, 7.2)
+        fitted, font_size = _fit_line(pdf, line, seat_width - 3 * mm, 8.3)
         pdf.setFont(FONT_REGULAR, font_size)
         pdf.drawCentredString(
             x + seat_width / 2,
@@ -115,7 +110,7 @@ def _draw_export_seat(
 
 
 def export_seating_plan(plan: SeatingPlan, output_path: Path) -> Path:
-    """Export four horizontal tables on one monochrome A3 landscape page."""
+    """Export one large horizontal table per monochrome A3 landscape page."""
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     page_width, page_height = landscape(A3)
@@ -124,28 +119,23 @@ def export_seating_plan(plan: SeatingPlan, output_path: Path) -> Path:
     pdf.setAuthor("")
 
     margin = 15 * mm
-    stage_top = page_height - 31 * mm
-    stage_bottom = 23 * mm
-    table_count = max(1, plan.table_count)
+    title_y = page_height - 20 * mm
+    stage_top = page_height - 43 * mm
+    stage_bottom = 29 * mm
     block_height = stage_top - stage_bottom
     usable_width = page_width - 2 * margin
-    gap = 2.1 * mm
-    seat_height = min(11 * mm, block_height * 0.27)
-    table_height = min(13 * mm, block_height * 0.25)
+    gap = 3.0 * mm
+    seat_height = min(24 * mm, block_height * 0.28)
+    table_height = min(32 * mm, block_height * 0.36)
 
-    for table_id in range(table_count):
+    for page_index, table_id in enumerate(range(max(1, plan.table_count))):
+        label = _table_label(plan, table_id)
         pdf.setFillColor(colors.black)
-        pdf.setFont(FONT_BOLD, 20)
-        pdf.drawString(margin, page_height - 18 * mm, "")
-        pdf.setFont(FONT_REGULAR, 8)
-        pdf.drawRightString(
-            page_width - margin,
-            page_height - 17 * mm,
-            datetime.now().astimezone().strftime(""),
-        )
+        pdf.setFont(FONT_BOLD, 22)
+        pdf.drawCentredString(page_width / 2, title_y, label)
         pdf.setStrokeColor(colors.HexColor("#777777"))
         pdf.setLineWidth(0.6)
-        pdf.line(margin, page_height - 22 * mm, page_width - margin, page_height - 22 * mm)
+        pdf.line(margin, page_height - 28 * mm, page_width - margin, page_height - 28 * mm)
 
         centre_y = (stage_top + stage_bottom) / 2
         layout = plan.table_layout(table_id)
@@ -153,11 +143,11 @@ def export_seating_plan(plan: SeatingPlan, output_path: Path) -> Path:
             seat.position: seat for seat in plan.seats if seat.table == table_id
         }
         if layout.shape == "round":
-            seat_width = min(28 * mm, max(15 * mm, (215 * mm / layout.seat_count)))
-            round_seat_height = min(9 * mm, block_height * 0.16)
-            radius_x = min(118 * mm, usable_width / 2 - seat_width / 2)
-            radius_y = min(23 * mm, block_height / 2 - round_seat_height * 0.55)
-            body_width = body_height = min(34 * mm, block_height * 0.58)
+            seat_width = min(38 * mm, max(18 * mm, (usable_width / max(1, layout.capacity)) * 0.9))
+            round_seat_height = min(21 * mm, block_height * 0.19)
+            radius_x = min(145 * mm, usable_width / 2 - seat_width / 2)
+            radius_y = min(53 * mm, block_height / 2 - round_seat_height * 0.55)
+            body_width = body_height = min(72 * mm, block_height * 0.58)
             pdf.setFillColor(colors.white)
             pdf.setStrokeColor(colors.HexColor("#555555"))
             pdf.setLineWidth(0.9)
@@ -170,20 +160,20 @@ def export_seating_plan(plan: SeatingPlan, output_path: Path) -> Path:
                 stroke=1,
             )
             pdf.setFillColor(colors.black)
-            pdf.setFont(FONT_BOLD, 8)
-            pdf.drawCentredString(page_width / 2, centre_y + 1.5, f"Table {table_id + 1}")
+            pdf.setFont(FONT_BOLD, 12)
+            pdf.drawCentredString(page_width / 2, centre_y + 2, f"Table {table_id + 1}")
             custom_name = plan.table_name(table_id)
             default_name = f"Table {table_id + 1}"
             if custom_name.casefold() != default_name.casefold():
                 label, font_size = _fit_line(
                     pdf,
                     custom_name,
-                    body_width - 5 * mm,
-                    7,
+                    body_width - 8 * mm,
+                    10,
                     FONT_REGULAR,
                 )
                 pdf.setFont(FONT_REGULAR, font_size)
-                pdf.drawCentredString(page_width / 2, centre_y - 8, label)
+                pdf.drawCentredString(page_width / 2, centre_y - 12, label)
             for position in range(layout.capacity):
                 angle = -math.pi / 2 + (2 * math.pi * position / layout.capacity)
                 x = page_width / 2 + math.cos(angle) * radius_x - seat_width / 2
@@ -191,68 +181,59 @@ def export_seating_plan(plan: SeatingPlan, output_path: Path) -> Path:
                 seat = seats_by_position.get(position)
                 guest = plan.guests.get(seat.guest_id) if seat and seat.guest_id else None
                 _draw_export_seat(pdf, guest, x, y, seat_width, round_seat_height)
-            continue
+        else:
+            top_count = (layout.seat_count + 1) // 2
+            bottom_count = layout.seat_count // 2
+            longest_side = max(1, top_count, bottom_count)
+            end_space = 34 * mm if layout.end_chairs else 0
+            side_width = usable_width - 2 * end_space
+            seat_width = min(43 * mm, (side_width - (longest_side - 1) * gap) / longest_side)
+            table_x = margin + end_space
+            table_width = side_width
+            table_y = centre_y - table_height / 2
+            seat_offset = table_height / 2 + 5.5 * mm
+            top_y = centre_y + seat_offset
+            bottom_y = centre_y - seat_offset - seat_height
+            pdf.setFillColor(colors.white)
+            pdf.setStrokeColor(colors.HexColor("#555555"))
+            pdf.setLineWidth(0.9)
+            pdf.rect(table_x, table_y, table_width, table_height, fill=1, stroke=1)
+            pdf.setFillColor(colors.black)
+            pdf.setFont(FONT_BOLD, 12)
+            pdf.drawCentredString(page_width / 2, centre_y - 4, label)
 
-        top_count = (layout.seat_count + 1) // 2
-        bottom_count = layout.seat_count // 2
-        longest_side = max(1, top_count, bottom_count)
-        end_space = 28 * mm if layout.end_chairs else 0
-        side_width = usable_width - 2 * end_space
-        seat_width = min(34 * mm, (side_width - (longest_side - 1) * gap) / longest_side)
-        table_x = margin + end_space
-        table_width = side_width
-        table_y = centre_y - table_height / 2
-        seat_offset = table_height / 2 + 3.2 * mm
-        top_y = centre_y + seat_offset
-        bottom_y = centre_y - seat_offset - seat_height
-        pdf.setFillColor(colors.white)
-        pdf.setStrokeColor(colors.HexColor("#555555"))
-        pdf.setLineWidth(0.9)
-        pdf.rect(table_x, table_y, table_width, table_height, fill=1, stroke=1)
-        pdf.setFillColor(colors.black)
-        pdf.setFont(FONT_BOLD, 10)
-        pdf.drawCentredString(page_width / 2, centre_y - 3.2, _table_label(plan, table_id))
-
-        for position in range(layout.seat_count):
-            if position < top_count:
-                column = position
-                columns = top_count
-                y = top_y
-            else:
-                column = bottom_count - 1 - (position - top_count)
-                columns = bottom_count
-                y = bottom_y
-            span = (columns - 1) * (seat_width + gap)
-            x = page_width / 2 - span / 2 + column * (seat_width + gap) - seat_width / 2
-            seat = seats_by_position.get(position)
-            guest = plan.guests.get(seat.guest_id) if seat and seat.guest_id else None
-            _draw_export_seat(pdf, guest, x, y, seat_width, seat_height)
-
-        if layout.end_chairs:
-            for position, x in (
-                (layout.seat_count, margin),
-                (layout.seat_count + 1, page_width - margin - seat_width),
-            ):
+            for position in range(layout.seat_count):
+                if position < top_count:
+                    column = position
+                    columns = top_count
+                    y = top_y
+                else:
+                    column = bottom_count - 1 - (position - top_count)
+                    columns = bottom_count
+                    y = bottom_y
+                span = (columns - 1) * (seat_width + gap)
+                x = page_width / 2 - span / 2 + column * (seat_width + gap) - seat_width / 2
                 seat = seats_by_position.get(position)
                 guest = plan.guests.get(seat.guest_id) if seat and seat.guest_id else None
-                _draw_export_seat(
-                    pdf,
-                    guest,
-                    x,
-                    centre_y - seat_height / 2,
-                    seat_width,
-                    seat_height,
-                )
+                _draw_export_seat(pdf, guest, x, y, seat_width, seat_height)
 
-        seated = sum(
-            seat.guest_id is not None and seat.table == table_id
-            for seat in plan.seats
-        )
-        pdf.setFillColor(colors.black)
-        pdf.setFont(FONT_REGULAR, 8)
-        pdf.drawString(margin, 12 * mm, f"Seated guests: {seated}")
-        pdf.drawRightString(page_width - margin, 12 * mm, "")
-        pdf.showPage()
+            if layout.end_chairs:
+                for position, x in (
+                    (layout.seat_count, margin),
+                    (layout.seat_count + 1, page_width - margin - seat_width),
+                ):
+                    seat = seats_by_position.get(position)
+                    guest = plan.guests.get(seat.guest_id) if seat and seat.guest_id else None
+                    _draw_export_seat(
+                        pdf,
+                        guest,
+                        x,
+                        centre_y - seat_height / 2,
+                        seat_width,
+                        seat_height,
+                    )
+        if page_index < max(1, plan.table_count) - 1:
+            pdf.showPage()
     pdf.save()
     return output_path
 
@@ -264,6 +245,14 @@ def _guest_assignment(plan: SeatingPlan, guest_id: str) -> str:
     return _table_label(plan, seat.table)
 
 
+def _surname_sort_key(guest) -> tuple[str, str, str]:
+    """Sort a guest by surname, then full name for stable tie-breaking."""
+
+    words = re.findall(r"[^\W_]+(?:[-'][^\W_]+)*", guest.name, flags=re.UNICODE)
+    surname = words[-1] if words else guest.name
+    return surname.casefold(), guest.name.casefold(), guest.id
+
+
 def _seated_guests(plan: SeatingPlan):
     return sorted(
         (
@@ -271,100 +260,76 @@ def _seated_guests(plan: SeatingPlan):
             for guest in plan.guests.values()
             if guest.attending and plan.seat_for_guest(guest.id) is not None
         ),
-        key=lambda item: (item.name.casefold(), item.id),
+        key=_surname_sort_key,
     )
 
 
 def export_guest_directory(plan: SeatingPlan, output_path: Path) -> Path:
-    """Export an alphabetical guest-to-table directory on A4 pages."""
+    """Export a four-column alphabetical guest-to-table directory."""
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    document = SimpleDocTemplate(
-        str(output_path),
-        pagesize=A4,
-        rightMargin=16 * mm,
-        leftMargin=16 * mm,
-        topMargin=18 * mm,
-        bottomMargin=17 * mm,
-        title="Guest List",
-        author="Party Seat Planner",
-    )
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        "PSPTitle",
-        parent=styles["Title"],
-        fontName=FONT_BOLD,
-        fontSize=20,
-        leading=24,
-        textColor=colors.black,
-        alignment=TA_LEFT,
-        spaceAfter=4 * mm,
-    )
-    body_style = ParagraphStyle(
-        "PSPBody",
-        parent=styles["BodyText"],
-        fontName=FONT_REGULAR,
-        fontSize=9,
-        leading=11,
-        textColor=colors.black,
-    )
-    header_style = ParagraphStyle(
-        "PSPHeader",
-        parent=body_style,
-        fontName=FONT_BOLD,
-        textColor=colors.white,
-    )
+    page_width, page_height = A4
+    pdf = canvas.Canvas(str(output_path), pagesize=A4)
+    pdf.setTitle("Guest list")
+    pdf.setAuthor("")
 
-    seated_guests = _seated_guests(plan)
-    story = [
-        Paragraph("Guest List", title_style),
-        Paragraph(
-            f"{len(seated_guests)} seated guests",
-            body_style,
-        ),
-        Spacer(1, 5 * mm),
-    ]
-    rows = [
-        [Paragraph("Guest", header_style), Paragraph("Table", header_style)]
-    ]
-    for guest in seated_guests:
-        rows.append(
-            [
-                Paragraph(escape(guest.name), body_style),
-                Paragraph(escape(_guest_assignment(plan, guest.id)), body_style),
-            ]
+    margin_x = 11 * mm
+    title_y = page_height - 18 * mm
+    heading_y = page_height - 31 * mm
+    first_name_y = heading_y - 8 * mm
+    bottom_y = 14 * mm
+    column_count = max(1, plan.table_count)
+    column_gap = 3 * mm
+    column_width = (page_width - 2 * margin_x - (column_count - 1) * column_gap) / column_count
+    line_height = 5.4 * mm
+    font_size = 8.2
+    heading_size = 9.2
+    table_guests = []
+    for table_id in range(column_count):
+        table_guests.append(
+            sorted(
+                (
+                    guest
+                    for guest in plan.guests.values()
+                    if guest.attending
+                    and (seat := plan.seat_for_guest(guest.id)) is not None
+                    and seat.table == table_id
+                ),
+                key=_surname_sort_key,
+            )
         )
 
-    table = Table(rows, colWidths=[105 * mm, 70 * mm], repeatRows=1, hAlign="LEFT")
-    table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#333333")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#AAAAAA")),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F2F2F2")]),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 7),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 7),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ]
-        )
-    )
-    story.append(table)
-
-    def add_page_footer(pdf: canvas.Canvas, doc) -> None:
-        pdf.saveState()
-        pdf.setStrokeColor(colors.HexColor("#AAAAAA"))
-        pdf.setLineWidth(0.4)
-        pdf.line(16 * mm, 12 * mm, A4[0] - 16 * mm, 12 * mm)
+    page_number = 0
+    offsets = [0] * column_count
+    while page_number == 0 or any(offset < len(guests) for offset, guests in zip(offsets, table_guests)):
         pdf.setFillColor(colors.black)
-        pdf.setFont(FONT_REGULAR, 7.5)
-        pdf.drawString(16 * mm, 8 * mm, "Party Seat Planner")
-        pdf.drawRightString(A4[0] - 16 * mm, 8 * mm, f"Page {doc.page}")
-        pdf.restoreState()
-
-    document.build(story, onFirstPage=add_page_footer, onLaterPages=add_page_footer)
+        if page_number == 0:
+            pdf.setFont(FONT_BOLD, 22)
+            pdf.drawCentredString(page_width / 2, title_y, "Guest list")
+        for table_id, guests in enumerate(table_guests):
+            x = margin_x + table_id * (column_width + column_gap)
+            pdf.setFillColor(colors.HexColor("#333333"))
+            pdf.rect(x, heading_y - 4 * mm, column_width, 7 * mm, fill=1, stroke=0)
+            pdf.setFillColor(colors.white)
+            pdf.setFont(FONT_BOLD, heading_size)
+            pdf.drawCentredString(x + column_width / 2, heading_y - 1.5 * mm, _table_label(plan, table_id))
+            pdf.setStrokeColor(colors.HexColor("#CCCCCC"))
+            pdf.setLineWidth(0.35)
+            pdf.line(x, heading_y - 5.5 * mm, x + column_width, heading_y - 5.5 * mm)
+            pdf.setFillColor(colors.black)
+            pdf.setFont(FONT_REGULAR, font_size)
+            y = first_name_y
+            while offsets[table_id] < len(guests) and y >= bottom_y:
+                guest = guests[offsets[table_id]]
+                fitted, fitted_size = _fit_line(pdf, guest.name, column_width - 2 * mm, font_size)
+                pdf.setFont(FONT_REGULAR, fitted_size)
+                pdf.drawString(x + 1 * mm, y, fitted)
+                offsets[table_id] += 1
+                y -= line_height
+        page_number += 1
+        if any(offset < len(guests) for offset, guests in zip(offsets, table_guests)):
+            pdf.showPage()
+    pdf.save()
     return output_path
 
 

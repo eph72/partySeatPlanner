@@ -268,6 +268,13 @@ class SaveTests(unittest.TestCase):
         self.assertEqual(_guest_assignment(plan, seated_id), "Table 1 - Family")
         self.assertEqual([guest.id for guest in _seated_guests(plan)], [seated_id])
 
+    def test_guest_directory_orders_each_table_by_surname(self) -> None:
+        plan = SeatingPlan.from_names(["Zoe Adams", "Ben Adams", "Amy Baker"])
+        self.assertEqual(
+            [guest.name for guest in _seated_guests(plan)],
+            ["Ben Adams", "Zoe Adams", "Amy Baker"],
+        )
+
     def test_invalid_format_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             manager = SaveManager(Path(folder))

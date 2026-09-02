@@ -228,14 +228,15 @@ moves any displaced guests to the Bench after asking for confirmation.
 Click **Export PDFs** in the sidebar, enter a name and choose a destination
 folder. The app creates two files without overwriting earlier exports:
 
-- a one-page A3 landscape seating plan showing all four tables in their selected
-  rectangular or round shapes;
-- an A4 alphabetical guest directory showing each seated guest's table
-  number/name.
+- an A3 landscape seating plan with one large page for each table in its selected
+  rectangular or round shape;
+- an A4 guest list headed **Guest list**, with one column per table and each
+  table's seated guests sorted alphabetically by surname.
 
 The seating-plan PDF is monochrome and deliberately omits all seat colours and
 lock indicators, making it suitable for printing or sharing with a venue.
-Guests on the Bench or marked not attending are omitted from both exports.
+The guest-list export has no footer, page count or extra summary text. Guests on
+the Bench or marked not attending are omitted from both exports.
 
 ## Updating an existing installation
 
